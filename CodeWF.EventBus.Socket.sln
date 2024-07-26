@@ -1,0 +1,38 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.35118.90
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "解决方案项", "解决方案项", "{B71658F0-AC68-4B61-89B9-08ECC771E2D6}"
+	ProjectSection(SolutionItems) = preProject
+		README-zh_CN.md = README-zh_CN.md
+		README.md = README.md
+	EndProjectSection
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{CB662157-BF54-4B77-A1AD-EEC7E28309DA}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{DA28FE9F-ECD4-4305-92EF-6DE6F9B0543E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "CodeWF.EventBus.Socket", "src\CodeWF.EventBus.Socket\CodeWF.EventBus.Socket.csproj", "{107DE16B-73CD-46FF-B638-772EC378B355}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{107DE16B-73CD-46FF-B638-772EC378B355}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{107DE16B-73CD-46FF-B638-772EC378B355}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{107DE16B-73CD-46FF-B638-772EC378B355}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{107DE16B-73CD-46FF-B638-772EC378B355}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{107DE16B-73CD-46FF-B638-772EC378B355} = {CB662157-BF54-4B77-A1AD-EEC7E28309DA}
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {CECA8DFA-8C22-43EC-B697-349811F848D3}
+	EndGlobalSection
+EndGlobal
