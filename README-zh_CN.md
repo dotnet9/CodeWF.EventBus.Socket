@@ -1,6 +1,6 @@
 # CodeWF.EventBus.Socket
 
-简体中文 | [English](README.MD)
+简体中文 | [English](README.md)
 
 **使用Socket实现的分布式事件总线，不依赖第三方MQ。**
 
