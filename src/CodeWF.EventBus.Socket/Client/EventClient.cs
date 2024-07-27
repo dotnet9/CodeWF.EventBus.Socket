@@ -58,14 +58,15 @@ public class EventClient : IEventClient
         {
             handlers = new List<Delegate>();
             _subjectAndHandlers.TryAdd(subject, handlers);
+
+            SendCommand(new RequestSubscribe()
+            {
+                TaskId = SocketHelper.GetNewTaskId(),
+                Subject = subject
+            });
         }
 
         handlers.Add(eventHandler);
-        SendCommand(new RequestSubscribe()
-        {
-            TaskId = SocketHelper.GetNewTaskId(),
-            Subject = subject
-        });
     }
 
     public void Subscribe<T>(string subject, Func<T, Task> asyncEventHandler)
@@ -74,36 +75,45 @@ public class EventClient : IEventClient
         {
             handlers = new List<Delegate>();
             _subjectAndHandlers.TryAdd(subject, handlers);
+
+            SendCommand(new RequestSubscribe()
+            {
+                TaskId = SocketHelper.GetNewTaskId(),
+                Subject = subject
+            });
         }
 
         handlers.Add(asyncEventHandler);
-        SendCommand(new RequestSubscribe()
-        {
-            TaskId = SocketHelper.GetNewTaskId(),
-            Subject = subject
-        });
     }
 
     public void Unsubscribe<T>(string subject, Action<T> eventHandler)
     {
         if (!_subjectAndHandlers.TryGetValue(subject, out var handlers)) return;
         handlers.Remove(eventHandler);
-        SendCommand(new RequestUnsubscribe()
+
+        if (handlers.Count <= 0)
         {
-            TaskId = SocketHelper.GetNewTaskId(),
-            Subject = subject
-        });
+            SendCommand(new RequestUnsubscribe()
+            {
+                TaskId = SocketHelper.GetNewTaskId(),
+                Subject = subject
+            });
+        }
     }
 
     public void Unsubscribe<T>(string subject, Func<T, Task> asyncEventHandler)
     {
         if (!_subjectAndHandlers.TryGetValue(subject, out var handlers)) return;
         handlers.Remove(asyncEventHandler);
-        SendCommand(new RequestUnsubscribe()
+
+        if (handlers.Count <= 0)
         {
-            TaskId = SocketHelper.GetNewTaskId(),
-            Subject = subject
-        });
+            SendCommand(new RequestUnsubscribe()
+            {
+                TaskId = SocketHelper.GetNewTaskId(),
+                Subject = subject
+            });
+        }
     }
 
     public void Publish<T>(string subject, T message)
@@ -112,7 +122,7 @@ public class EventClient : IEventClient
         {
             TaskId = SocketHelper.GetNewTaskId(),
             Subject = subject,
-            Buffer = message.SerializeObject() 
+            Buffer = message.SerializeObject()
         });
     }
 
