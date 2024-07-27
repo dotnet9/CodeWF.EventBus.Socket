@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:EventBusDemo.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        Width ="800" Height="450"
+        x:Class="EventBusDemo.Views.EventManagerView"
+        x:DataType="vm:EventManagerViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="{Binding Title}">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:EventManagerViewModel/>
+    </Design.DataContext>
+
+    <StackPanel HorizontalAlignment="Center">
+        <TextBlock Text="事件服务地址："/>
+        <TextBox Text="{Binding Address}" Width="200" />
+        <Button Content="运行事件服务端" Command="{Binding OpenEventServer}" />
+        <Button Content="运行事件客户端" Command="{Binding OpenEventClient}" />
+    </StackPanel>
+</Window>

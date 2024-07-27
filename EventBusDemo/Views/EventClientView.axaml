@@ -1,0 +1,40 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:EventBusDemo.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        Width="800" Height="450"
+        x:Class="EventBusDemo.Views.EventClientView"
+        x:DataType="vm:EventClientViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="{Binding Title}">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:EventClientViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto Auto *">
+        <StackPanel Orientation="Horizontal">
+            <TextBlock>
+                <Run Text="事件服务地址：" />
+                <Run Text="{Binding Address}" />
+            </TextBlock>
+            <Button Content="连接服务" Command="{Binding ConnectServer}" />
+            <Button Content="断开服务" Command="{Binding Disconnect}" />
+            <TextBlock Text="{Binding RunTip}" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Grid.Row="1">
+            <StackPanel Orientation="Horizontal" Grid.Row="3">
+                <Button Content="订阅事件" Command="{Binding Subscribe}" />
+                <Button Content="取订事件" Command="{Binding Unsubscribe}" />
+                <Button Content="发送" Command="{Binding SendEvent}" />
+            </StackPanel>
+        </StackPanel>
+        <HeaderedContentControl Grid.Row="2" Header="日志">
+            <ListBox ItemsSource="{Binding Logs, Mode=OneWay}" />
+        </HeaderedContentControl>
+    </Grid>
+</Window>

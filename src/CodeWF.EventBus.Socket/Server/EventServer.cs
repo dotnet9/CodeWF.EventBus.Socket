@@ -25,11 +25,21 @@ public class EventServer : IEventServer
 
         _cancellationTokenSource = new CancellationTokenSource();
         ListenForClients();
+        ListenPublish();
     }
 
     public void Stop()
     {
-        _cancellationTokenSource?.Cancel();
+        try
+        {
+            _server?.Dispose();
+            _server = null;
+            _cancellationTokenSource?.Cancel();
+        }
+        catch
+        {
+            // ignored
+        }
     }
 
     #endregion
@@ -93,7 +103,7 @@ public class EventServer : IEventServer
             {
                 try
                 {
-                    while (tcpClient.ReadPacket(out var buffer, out var headInfo))
+                    if (tcpClient.ReadPacket(out var buffer, out var headInfo))
                     {
                         if (headInfo.IsNetObject<RequestIsEventServer>())
                         {
@@ -217,9 +227,8 @@ public class EventServer : IEventServer
         }
     }
 
-    public void SendCommand(System.Net.Sockets.Socket client, INetObject command)
+    private void SendCommand(System.Net.Sockets.Socket client, INetObject command)
     {
-        var sw = Stopwatch.StartNew();
         var buffer = command.Serialize(DateTime.Now.ToFileTimeUtc());
         client.Send(buffer);
     }

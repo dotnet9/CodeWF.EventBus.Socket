@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:EventBusDemo.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
+        Width="800" Height="450"
+        x:Class="EventBusDemo.Views.EventServerView"
+        x:DataType="vm:EventServerViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="{Binding Title}">
+
+    <Design.DataContext>
+        <!-- This only sets the DataContext for the previewer in an IDE,
+             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
+        <vm:EventServerViewModel />
+    </Design.DataContext>
+    <Grid RowDefinitions="Auto *">
+        <StackPanel Orientation="Horizontal">
+            <TextBlock>
+                <Run Text="事件服务地址：" />
+                <Run Text="{Binding Address}" />
+            </TextBlock>
+            <Button Content="运行服务" Command="{Binding RunServer}" />
+            <Button Content="停止服务" Command="{Binding Stop}" />
+            <TextBlock Text="{Binding RunTip}" />
+        </StackPanel>
+        <HeaderedContentControl Grid.Row="1" Header="日志">
+            <ListBox ItemsSource="{Binding Logs,Mode=OneWay}" />
+        </HeaderedContentControl>
+    </Grid>
+</Window>

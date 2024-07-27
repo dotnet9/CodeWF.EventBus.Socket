@@ -2,11 +2,14 @@
 
 public interface IEventClient
 {
-    bool ConnectServer(string host, int port);
+    bool Connect(string host, int port, out string message);
+    void Disconnect();
 
     void Subscribe<T>(string subject, Action<T> eventHandler);
+    void Subscribe<T>(string subject, Func<T, Task> asyncEventHandler);
 
     void Unsubscribe<T>(string subject, Action<T> eventHandler);
+    void Unsubscribe<T>(string subject, Func<T, Task> asyncEventHandler);
 
-    void Publish<T>(string subject, string message);
+    void Publish<T>(string subject, T message);
 }

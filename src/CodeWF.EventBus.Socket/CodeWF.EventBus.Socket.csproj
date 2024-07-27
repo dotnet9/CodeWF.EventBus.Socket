@@ -27,5 +27,6 @@
 	</ItemGroup>
 	<ItemGroup>
 	  <PackageReference Include="CodeWF.NetWeaver" Version="1.1.0" />
+	  <PackageReference Include="System.Text.Json" Version="9.0.0-preview.6.24327.7" />
 	</ItemGroup>
 </Project>
