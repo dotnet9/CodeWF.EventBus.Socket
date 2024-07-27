@@ -1,6 +1,7 @@
 ﻿using CodeWF.EventBus.Socket.Models.Responses;
 
-namespace CodeWF.EventBus.Socket.Server;
+// ReSharper disable once CheckNamespace
+namespace CodeWF.EventBus.Socket;
 
 public class EventServer : IEventServer
 {

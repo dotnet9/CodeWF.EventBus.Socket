@@ -3,7 +3,8 @@ using CodeWF.EventBus.Socket.Helpers;
 using CodeWF.EventBus.Socket.Models.Responses;
 using System.Linq;
 
-namespace CodeWF.EventBus.Socket.Client;
+// ReSharper disable once CheckNamespace
+namespace CodeWF.EventBus.Socket;
 
 public class EventClient : IEventClient
 {

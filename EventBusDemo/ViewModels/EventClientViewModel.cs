@@ -1,9 +1,9 @@
-﻿using CodeWF.EventBus.Socket.Client;
+﻿using CodeWF.EventBus.Socket;
+using EventBusDemo.Models;
 using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
-using EventBusDemo.Models;
 
 namespace EventBusDemo.ViewModels
 {

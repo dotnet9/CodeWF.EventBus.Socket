@@ -1,4 +1,6 @@
-﻿namespace CodeWF.EventBus.Socket.Server;
+﻿// ReSharper disable once CheckNamespace
+
+namespace CodeWF.EventBus.Socket;
 
 public interface IEventServer
 {

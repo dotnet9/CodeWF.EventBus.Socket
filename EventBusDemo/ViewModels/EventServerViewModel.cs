@@ -1,4 +1,4 @@
-﻿using CodeWF.EventBus.Socket.Server;
+﻿using CodeWF.EventBus.Socket;
 using ReactiveUI;
 using System;
 using System.Diagnostics;
