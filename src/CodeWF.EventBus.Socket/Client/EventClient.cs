@@ -1,9 +1,5 @@
-﻿using CodeWF.EventBus.Socket.Extensions;
-using CodeWF.EventBus.Socket.Helpers;
-using CodeWF.EventBus.Socket.Models.Responses;
-using System.Linq;
+﻿// ReSharper disable once CheckNamespace
 
-// ReSharper disable once CheckNamespace
 namespace CodeWF.EventBus.Socket;
 
 public class EventClient : IEventClient
@@ -116,7 +112,7 @@ public class EventClient : IEventClient
         {
             TaskId = SocketHelper.GetNewTaskId(),
             Subject = subject,
-            Message = message.GetString()
+            Buffer = message.SerializeObject() 
         });
     }
 
@@ -211,7 +207,7 @@ public class EventClient : IEventClient
             {
                 var param1 = handler.Method.GetParameters().First();
                 var param1Type = param1.ParameterType;
-                var param1Value = response.Message?.GetInstance(param1Type);
+                var param1Value = response.Buffer?.DeserializeObject(param1Type);
                 if (handler.Method.ReturnType == typeof(Task))
                 {
                     ((Task)handler.DynamicInvoke(param1Value)).GetAwaiter().GetResult();

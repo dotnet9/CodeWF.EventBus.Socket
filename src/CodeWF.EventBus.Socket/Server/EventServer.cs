@@ -1,6 +1,4 @@
-﻿using CodeWF.EventBus.Socket.Models.Responses;
-
-// ReSharper disable once CheckNamespace
+﻿// ReSharper disable once CheckNamespace
 namespace CodeWF.EventBus.Socket;
 
 public class EventServer : IEventServer
@@ -76,7 +74,7 @@ public class EventServer : IEventServer
                 {
                     TaskId = @event.TaskId,
                     Subject = @event.Subject,
-                    Message = @event.Message
+                    Buffer = @event.Buffer
                 };
 
                 foreach (var client in clients)

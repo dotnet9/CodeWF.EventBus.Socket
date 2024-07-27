@@ -7,5 +7,5 @@ internal class UpdateEvent : INetObject
 
     public string Subject { get; set; } = null!;
 
-    public string? Message { get; set; }
+    public byte[]? Buffer { get; set; }
 }
