@@ -5,6 +5,8 @@ English | [简体中文](README-zh_CN.md)
 
 `CodeWF.EventBus.Socket` is a lightweight, Socket-based distributed event bus system designed to simplify event communication in distributed architectures. It allows processes to communicate via a publish/subscribe pattern without relying on external message queue services.
 
+![](doc/imgs/structure.png)
+
 ## Features
 
 - **Lightweight**: No dependency on external MQ services, reducing system complexity and dependencies.
