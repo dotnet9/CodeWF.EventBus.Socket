@@ -10,8 +10,6 @@ namespace EventBusDemo.ViewModels
 {
     public class EventClientViewModel : ViewModelBase
     {
-        public ObservableCollection<string> Logs { get; } = new();
-
 
         private IEventClient? _eventClient;
         private const string EventSubject = "event.email.new";
