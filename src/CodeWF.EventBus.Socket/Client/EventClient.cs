@@ -31,7 +31,7 @@ public class EventClient : IEventClient
         var ipEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
         ConnectStatus = ConnectStatus.IsConnecting;
 
-        Task.Run(async () =>
+        Task.Factory.StartNew(async () =>
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
             {
@@ -170,7 +170,7 @@ public class EventClient : IEventClient
 
     private void ListenForServer()
     {
-        Task.Run(() =>
+        Task.Factory.StartNew(() =>
         {
             while (_client != null && _cancellationTokenSource is { IsCancellationRequested: false })
             {
@@ -198,7 +198,7 @@ public class EventClient : IEventClient
 
     private void CheckResponse()
     {
-        Task.Run(async () =>
+        Task.Factory.StartNew(() =>
         {
             while (_cancellationTokenSource is { IsCancellationRequested: false })
             {
@@ -222,7 +222,7 @@ public class EventClient : IEventClient
 
     private void SendHeartbeat()
     {
-        Task.Run(async () =>
+        Task.Factory.StartNew(async () =>
         {
             while (_cancellationTokenSource is { IsCancellationRequested: false })
             {

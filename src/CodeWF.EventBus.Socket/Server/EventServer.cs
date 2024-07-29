@@ -25,7 +25,7 @@ public class EventServer : IEventServer
             ? new IPEndPoint(IPAddress.Any, port)
             : new IPEndPoint(IPAddress.Parse(host), port);
 
-        Task.Run(async () =>
+        Task.Factory.StartNew(async () =>
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
             {
@@ -74,7 +74,7 @@ public class EventServer : IEventServer
 
     private void ListenForClients()
     {
-        Task.Run(async () =>
+        Task.Factory.StartNew(async () =>
         {
             while (_cancellationTokenSource?.IsCancellationRequested == false)
                 try
@@ -91,7 +91,7 @@ public class EventServer : IEventServer
 
     private void ListenPublish()
     {
-        Task.Run(async () =>
+        Task.Factory.StartNew(async () =>
         {
             while (_cancellationTokenSource?.IsCancellationRequested == false)
             {
@@ -137,7 +137,7 @@ public class EventServer : IEventServer
 
     private void HandleClient(System.Net.Sockets.Socket tcpClient)
     {
-        Task.Run(async () =>
+        Task.Factory.StartNew(async () =>
         {
             while (_cancellationTokenSource?.IsCancellationRequested == false)
             {
