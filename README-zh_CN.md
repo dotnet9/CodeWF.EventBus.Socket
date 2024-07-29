@@ -59,15 +59,8 @@ using CodeWF.EventBus.Socket;
 // 创建事件客户端实例
 IEventClient eventClient = new EventClient();
 
-// 连接到事件服务器
-if (eventClient.Connect("127.0.0.1", 9100, out var message))
-{
-    Console.WriteLine("连接事件服务成功！");
-}
-else
-{
-    Console.WriteLine($"连接事件服务失败：{message}");
-}
+// 连接到事件服务器，使用eventClient.ConnectStatus检查连接状态
+eventClient.Connect("127.0.0.1", 9100));
 ```
 
 ### 订阅事件

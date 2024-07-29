@@ -17,9 +17,9 @@
     </Design.DataContext>
 
     <StackPanel HorizontalAlignment="Center">
-        <TextBlock Text="事件服务地址："/>
+        <TextBlock Text="Event service address："/>
         <TextBox Text="{Binding Address}" Width="200" />
-        <Button Content="运行事件服务端" Command="{Binding OpenEventServer}" />
-        <Button Content="运行事件客户端" Command="{Binding OpenEventClient}" />
+        <Button Content="New event server process" Command="{Binding OpenEventServer}" />
+        <Button Content="New event client process" Command="{Binding OpenEventClient}" />
     </StackPanel>
 </Window>

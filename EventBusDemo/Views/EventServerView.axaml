@@ -18,14 +18,14 @@
     <Grid RowDefinitions="Auto *">
         <StackPanel Orientation="Horizontal">
             <TextBlock>
-                <Run Text="事件服务地址：" />
+                <Run Text="Event service address：" />
                 <Run Text="{Binding Address}" />
             </TextBlock>
-            <Button Content="运行服务" Command="{Binding RunServer}" />
-            <Button Content="停止服务" Command="{Binding Stop}" />
+            <Button Content="Run" Command="{Binding RunServer}" />
+            <Button Content="Stop" Command="{Binding Stop}" />
             <TextBlock Text="{Binding RunTip}" />
         </StackPanel>
-        <HeaderedContentControl Grid.Row="1" Header="日志">
+        <HeaderedContentControl Grid.Row="1" Header="Log">
             <ListBox ItemsSource="{Binding Logs,Mode=OneWay}" />
         </HeaderedContentControl>
     </Grid>

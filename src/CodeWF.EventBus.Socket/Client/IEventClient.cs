@@ -4,7 +4,8 @@ namespace CodeWF.EventBus.Socket;
 
 public interface IEventClient
 {
-    bool Connect(string host, int port, out string message);
+    ConnectStatus ConnectStatus { get; }
+    void Connect(string host, int port);
     void Disconnect();
 
     void Subscribe<T>(string subject, Action<T> eventHandler);
@@ -13,5 +14,13 @@ public interface IEventClient
     void Unsubscribe<T>(string subject, Action<T> eventHandler);
     void Unsubscribe<T>(string subject, Func<T, Task> asyncEventHandler);
 
-    void Publish<T>(string subject, T message);
+    bool Publish<T>(string subject, T message, out string errorMessage);
+}
+
+public enum ConnectStatus
+{
+    IsConnecting,
+    Connected,
+    Disconnected,
+    DisconnectedNeedCheckEventServer
 }

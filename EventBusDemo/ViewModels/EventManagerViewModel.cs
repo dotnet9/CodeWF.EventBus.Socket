@@ -27,7 +27,7 @@ namespace EventBusDemo.ViewModels
 
         public EventManagerViewModel()
         {
-            Title = $"EventBus管理，进程Id：{Process.GetCurrentProcess().Id}";
+            Title = $"EventBus management, process ID is {Process.GetCurrentProcess().Id}";
         }
 
         public void OpenEventServer()

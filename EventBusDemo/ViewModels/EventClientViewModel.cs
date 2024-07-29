@@ -4,35 +4,12 @@ using ReactiveUI;
 using System;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using Avalonia.Controls.Notifications;
 
 namespace EventBusDemo.ViewModels
 {
     public class EventClientViewModel : ViewModelBase
     {
-        private string? _title;
-
-        public string? Title
-        {
-            get => _title;
-            set => this.RaiseAndSetIfChanged(ref _title, value);
-        }
-
-        private string? _address;
-
-        public string? Address
-        {
-            get => _address;
-            set => this.RaiseAndSetIfChanged(ref _address, value);
-        }
-
-        private string? _runTip;
-
-        public string? RunTip
-        {
-            get => _runTip;
-            set => this.RaiseAndSetIfChanged(ref _runTip, value);
-        }
-
         public ObservableCollection<string> Logs { get; } = new();
 
 
@@ -41,52 +18,78 @@ namespace EventBusDemo.ViewModels
 
         public EventClientViewModel()
         {
-            Title = $"EventBus客户端，进程Id：{Process.GetCurrentProcess().Id}";
+            Title = $"EventBus client, process ID is {Process.GetCurrentProcess().Id}";
         }
 
         public void ConnectServer()
         {
+            if (_eventClient?.ConnectStatus == ConnectStatus.Connected)
+            {
+                AddLog("The event service has been connected!");
+                return;
+            }
+
             _eventClient ??= new EventClient();
             var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-            if (_eventClient.Connect(addressArray[0], int.Parse(addressArray[1]), out var message))
-            {
-                RunTip = "已开启";
-                AddLog("已连接事件服务");
-            }
-            else
-            {
-                RunTip = "未开启";
-                AddLog($"连接事件服务失败：{message}");
-            }
+            _eventClient.Connect(addressArray[0], int.Parse(addressArray[1]));
+            AddLog("Connecting to event service, please retrieve the connection status through ConnectStatus later!");
         }
 
         public void Disconnect()
         {
             _eventClient?.Disconnect();
             _eventClient = null;
-            RunTip = "未开启";
-            AddLog("已断开事件服务");
+            AddLog("Disconnected from event service");
         }
 
         public void Subscribe()
         {
-            _eventClient?.Subscribe<NewEmailNotification>(EventSubject, ReceiveNewEmail);
+            if (CheckIfEventConnected(true))
+            {
+                _eventClient?.Subscribe<NewEmailNotification>(EventSubject, ReceiveNewEmail);
+            }
         }
 
         public void Unsubscribe()
         {
-            _eventClient?.Unsubscribe<NewEmailNotification>(EventSubject, ReceiveNewEmail);
+            if (CheckIfEventConnected(true))
+            {
+                _eventClient?.Unsubscribe<NewEmailNotification>(EventSubject, ReceiveNewEmail);
+            }
         }
 
         public void SendEvent()
         {
-            _eventClient?.Publish(EventSubject, NewEmailNotification.GenerateRandomNewEmailNotification());
+            if (!CheckIfEventConnected(true))
+            {
+                return;
+            }
+
+            if (_eventClient!.Publish(EventSubject, NewEmailNotification.GenerateRandomNewEmailNotification(),
+                    out var errorMessage))
+            {
+                AddLog("Successfully sent event");
+            }
+            else
+            {
+                AddLog($"Sending event failed, the error message is [{errorMessage}]");
+            }
         }
 
         private void ReceiveNewEmail(NewEmailNotification message)
         {
-            RunTip = $"收到事件：{message}";
-            AddLog($"收到事件：{message}");
+            AddLog($"Received event is [{message}]");
+        }
+
+        private bool CheckIfEventConnected(bool showMsg = false)
+        {
+            if (_eventClient is { ConnectStatus: ConnectStatus.Connected }) return true;
+            if (showMsg)
+            {
+                AddLog("Please connect to the event service before sending the event");
+            }
+
+            return false;
         }
     }
 }

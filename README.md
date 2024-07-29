@@ -58,15 +58,8 @@ using CodeWF.EventBus.Socket;
 // Create an instance of the event client
 IEventClient eventClient = new EventClient();
 
-// Connect to the event server
-if (eventClient.Connect("127.0.0.1", 9100, out var message))
-{
-    Console.WriteLine("Successfully connected to the event service!");
-}
-else
-{
-    Console.WriteLine($"Failed to connect to the event service: {message}");
-}
+// Connect to the event server, use eventClient.ConnectStatus Check connection status
+eventClient.Connect("127.0.0.1", 9100);
 ```
 
 ### Subscribing to Events
