@@ -23,7 +23,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\src\CodeWF.EventBus.Socket\CodeWF.EventBus.Socket.csproj" />
+    <ProjectReference Include="..\CodeWF.EventBus.Socket\CodeWF.EventBus.Socket.csproj" />
   </ItemGroup>
 
   <ItemGroup>

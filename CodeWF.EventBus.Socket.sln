@@ -15,9 +15,9 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{DA28FE9F-E
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeWF.EventBus.Socket", "src\CodeWF.EventBus.Socket\CodeWF.EventBus.Socket.csproj", "{107DE16B-73CD-46FF-B638-772EC378B355}"
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeWF.EventBus.Socket.Test", "CodeWF.EventBus.Socket.Test\CodeWF.EventBus.Socket.Test.csproj", "{BC92D18A-F6D1-4CFC-9B74-A9DC799D0B61}"
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "CodeWF.EventBus.Socket.Test", "src\CodeWF.EventBus.Socket.Test\CodeWF.EventBus.Socket.Test.csproj", "{BC92D18A-F6D1-4CFC-9B74-A9DC799D0B61}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventBusDemo", "EventBusDemo\EventBusDemo.csproj", "{19632DBC-8F39-474E-B4DD-CE56DCCFC61E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "EventBusDemo", "src\EventBusDemo\EventBusDemo.csproj", "{19632DBC-8F39-474E-B4DD-CE56DCCFC61E}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
