@@ -14,6 +14,12 @@ English | [简体中文](README-zh_CN.md)
 - **Flexibility**: Supports custom event types and message handlers, making it easy to integrate into existing systems.
 - **Scalability**: Supports multiple client connections, suitable for distributed system environments.
 
+## 通信协议
+
+Data interaction through the `TCP` protocol, the protocol packet structure is as follows：
+
+![0.0.8@2x](doc/imgs/0.0.8@2x.png)
+
 ## Installation
 
 Install `CodeWF.EventBus.Socket` via the `NuGet` Package Manager:
