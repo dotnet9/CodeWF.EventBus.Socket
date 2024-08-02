@@ -3,38 +3,79 @@
         xmlns:vm="using:EventBusDemo.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-        Width="800" Height="450"
+        xmlns:prism="http://prismlibrary.com/"
+        prism:ViewModelLocator.AutoWireViewModel="True"
+        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="900"
+        Width="800" Height="900" Padding="20"
+        WindowStartupLocation="CenterScreen"
         x:Class="EventBusDemo.Views.EventClientView"
         x:DataType="vm:EventClientViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="{Binding Title}">
-
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:EventClientViewModel />
-    </Design.DataContext>
-
-    <Grid RowDefinitions="Auto Auto *">
-        <StackPanel Orientation="Horizontal">
-            <TextBlock>
+    <Window.Styles>
+        <Style Selector="CheckBox">
+            <Setter Property="Margin" Value="5" />
+        </Style>
+    </Window.Styles>
+    <Grid RowDefinitions="Auto Auto *" ColumnDefinitions="* *">
+        <StackPanel Orientation="Horizontal" Grid.ColumnSpan="2" Margin="0 0 0 10">
+            <StackPanel.Styles>
+                <Style Selector="Button">
+                    <Setter Property="Width" Value="100" />
+                    <Setter Property="Height" Value="35" />
+                    <Setter Property="HorizontalAlignment" Value="Right" />
+                </Style>
+            </StackPanel.Styles>
+            <TextBlock VerticalAlignment="Center">
                 <Run Text="Event service host：" />
                 <Run Text="{Binding Address}" />
             </TextBlock>
-            <Button Content="Connect" Command="{Binding ConnectServer}" />
-            <Button Content="Disconnect" Command="{Binding Disconnect}" />
-            <TextBlock Text="{Binding RunTip}" />
+            <Button Content="Connect" Command="{Binding ConnectServer}"
+                    Classes="Success" Theme="{DynamicResource SolidButton}"
+                    Margin="20 0" />
+            <Button Content="Disconnect" Command="{Binding Disconnect}"
+                    Classes="Danger" Theme="{DynamicResource SolidButton}" />
+            <TextBlock Text="{Binding RunTip}" VerticalAlignment="Center" />
         </StackPanel>
-        <StackPanel Orientation="Horizontal" Grid.Row="1">
-            <StackPanel Orientation="Horizontal" Grid.Row="3">
-                <Button Content="Subscribe" Command="{Binding Subscribe}" />
-                <Button Content="Unsubscribe" Command="{Binding Unsubscribe}" />
-                <Button Content="Send" Command="{Binding SendEvent}" />
-            </StackPanel>
-        </StackPanel>
-        <HeaderedContentControl Grid.Row="2" Header="Log">
-            <ListBox x:Name="LogListBox" ItemsSource="{Binding Logs, Mode=OneWay}" />
+        <HeaderedContentControl Header="Subscribe | Unsubscribe" Grid.Row="1" Grid.Column="0"
+                                Margin="0 0 10 0" Theme="{DynamicResource GroupBox}">
+            <UniformGrid Columns="1">
+                <CheckBox
+                    Content="Send Email Command"
+                    IsChecked="{Binding IsSubscribeSendEmailCommand}" Command="{Binding  SubscribeOrUnsubscribeEvent}"
+                    CommandParameter="SendEmailCommand"
+                    Theme="{DynamicResource CardCheckBox}" />
+                <CheckBox
+                    Content="Email Query"
+                    IsChecked="{Binding IsSubscribeEmailQuery}" Command="{Binding  SubscribeOrUnsubscribeEvent}"
+                    CommandParameter="EmailQuery"
+                    Theme="{DynamicResource CardCheckBox}" />
+            </UniformGrid>
         </HeaderedContentControl>
+        <HeaderedContentControl Header="Publish | Query" Grid.Row="1" Grid.Column="1"
+                                Margin="10 0 0 0" Theme="{DynamicResource GroupBox}">
+            <UniformGrid Columns="1">
+                <UniformGrid.Styles>
+                    <Style Selector="Button">
+                        <Setter Property="Width" Value="160" />
+                        <Setter Property="Height" Value="60" />
+                        <Setter Property="Margin" Value="5" />
+                    </Style>
+                </UniformGrid.Styles>
+                <Button
+                    Content="Publish Send Email" Command="{Binding PublishOrQueryEvent}"
+                    CommandParameter="SendEmailCommand"
+                    Classes="Primary" Theme="{DynamicResource OutlineButton}" />
+                <Button
+                    Content="Query Email" Command="{Binding PublishOrQueryEvent}" CommandParameter="EmailQuery"
+                    Classes="Success" Theme="{DynamicResource OutlineButton}" />
+            </UniformGrid>
+        </HeaderedContentControl>
+        <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="Hover" Theme="{StaticResource CardBorder}" Margin="0 10 0 0"
+                Padding="5">
+            <HeaderedContentControl Header="Log">
+                <ListBox x:Name="LogListBox" ItemsSource="{Binding Logs, Mode=OneWay}" />
+            </HeaderedContentControl>
+        </Border>
     </Grid>
 </Window>

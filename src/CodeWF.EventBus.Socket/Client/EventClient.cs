@@ -12,10 +12,11 @@ public class EventClient : IEventClient
     private CancellationTokenSource? _cancellationTokenSource;
 
     private readonly ConcurrentDictionary<string, List<Delegate>> _subjectAndHandlers = new();
+    private readonly ConcurrentDictionary<string, UpdateEvent> _queryTaskIdAndResponse = new();
 
     private readonly BlockingCollection<SocketCommand> _responses = new(new ConcurrentQueue<SocketCommand>());
 
-    private int? _requestIsEventServerTaskId;
+    private string? _requestIsEventServerTaskId;
     private const int ReconnectInterval = 3000;
 
     #region interface methods
@@ -76,14 +77,25 @@ public class EventClient : IEventClient
         }
         catch
         {
+            // ignored
         }
     }
 
     public void Subscribe<T>(string subject, Action<T> eventHandler)
     {
+        AddSubscribe(subject, eventHandler);
+    }
+
+    public void Subscribe<T>(string subject, Func<T, Task> asyncEventHandler)
+    {
+        AddSubscribe(subject, asyncEventHandler);
+    }
+
+    private void AddSubscribe(string subject, Delegate eventHandler)
+    {
         if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
         {
-            handlers = new List<Delegate>();
+            handlers = [];
             _subjectAndHandlers.TryAdd(subject, handlers);
 
             SendCommand(new RequestSubscribe()
@@ -94,23 +106,6 @@ public class EventClient : IEventClient
         }
 
         handlers.Add(eventHandler);
-    }
-
-    public void Subscribe<T>(string subject, Func<T, Task> asyncEventHandler)
-    {
-        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
-        {
-            handlers = new List<Delegate>();
-            _subjectAndHandlers.TryAdd(subject, handlers);
-
-            SendCommand(new RequestSubscribe()
-            {
-                TaskId = SocketHelper.GetNewTaskId(),
-                Subject = subject
-            });
-        }
-
-        handlers.Add(asyncEventHandler);
     }
 
     public void Unsubscribe<T>(string subject, Action<T> eventHandler)
@@ -161,6 +156,48 @@ public class EventClient : IEventClient
             errorMessage = ex.Message;
             Debug.WriteLine(ex.Message);
             return false;
+        }
+    }
+
+    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage, int overtimeMilliseconds)
+    {
+        errorMessage = string.Empty;
+        try
+        {
+            var request = new RequestQuery()
+            {
+                TaskId = SocketHelper.GetNewTaskId(),
+                Subject = subject,
+                Buffer = message.SerializeObject()
+            };
+            _queryTaskIdAndResponse[request.TaskId] = default;
+            SendCommand(request);
+            if (!ActionHelper.CheckOvertime(() =>
+                {
+                    while (_cancellationTokenSource is { IsCancellationRequested: false }
+                           && _queryTaskIdAndResponse.TryGetValue(request.TaskId, out var value)
+                           && value == default)
+                    {
+                        Thread.Sleep(TimeSpan.FromMilliseconds(10));
+                    }
+                }, overtimeMilliseconds))
+            {
+                throw new Exception("Query timeout, please try again!");
+            }
+
+            if (_queryTaskIdAndResponse.TryGetValue(request.TaskId, out var value)
+                && value != null)
+            {
+                return (TResponse)value.Buffer!.DeserializeObject(typeof(TResponse));
+            }
+
+            return default;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            Debug.WriteLine(ex.Message);
+            return default(TResponse);
         }
     }
 
@@ -251,7 +288,8 @@ public class EventClient : IEventClient
     private void CheckIsEventServer()
     {
         _requestIsEventServerTaskId = SocketHelper.GetNewTaskId();
-        SendCommand(new RequestIsEventServer() { TaskId = _requestIsEventServerTaskId.Value }, needCheckConnectStatus: false);
+        SendCommand(new RequestIsEventServer() { TaskId = _requestIsEventServerTaskId },
+            needCheckConnectStatus: false);
 
         if (!ActionHelper.CheckOvertime(() =>
             {
@@ -281,6 +319,12 @@ public class EventClient : IEventClient
 
     private void HandleResponse(UpdateEvent response)
     {
+        if (_queryTaskIdAndResponse.ContainsKey(response.TaskId))
+        {
+            _queryTaskIdAndResponse[response.TaskId] = response;
+            return;
+        }
+
         if (!_subjectAndHandlers.TryGetValue(response.Subject, out var handlers)) return;
         foreach (var handler in handlers)
         {

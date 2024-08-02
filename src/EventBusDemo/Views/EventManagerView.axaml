@@ -3,23 +3,36 @@
         xmlns:vm="using:EventBusDemo.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-        Width ="800" Height="450"
+        xmlns:prism="http://prismlibrary.com/"
+        prism:ViewModelLocator.AutoWireViewModel="True"
+        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="200"
+        Width="400" Height="200" Padding="20"
         x:Class="EventBusDemo.Views.EventManagerView"
         x:DataType="vm:EventManagerViewModel"
+        WindowStartupLocation="CenterScreen"
         Icon="/Assets/avalonia-logo.ico"
         Title="{Binding Title}">
 
     <Design.DataContext>
         <!-- This only sets the DataContext for the previewer in an IDE,
              to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:EventManagerViewModel/>
+        <vm:EventManagerViewModel />
     </Design.DataContext>
-
-    <StackPanel HorizontalAlignment="Center">
-        <TextBlock Text="Event service address："/>
-        <TextBox Text="{Binding Address}" Width="200" />
-        <Button Content="New event server process" Command="{Binding OpenEventServer}" />
-        <Button Content="New event client process" Command="{Binding OpenEventClient}" />
-    </StackPanel>
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Width" Value="120" />
+            <Setter Property="Height" Value="35" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+        </Style>
+    </Window.Styles>
+    <Grid RowDefinitions="Auto Auto Auto *" ColumnDefinitions="Auto Auto *">
+        <TextBlock Text="Address：" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
+        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Address}" Width="200" />
+        <Button Grid.Row="1" Grid.Column="1" Content="New server"
+                Command="{Binding OpenEventServer}" Margin="0 15"
+                Classes="Primary" Theme="{DynamicResource SolidButton}" />
+        <Button Grid.Row="2" Grid.Column="1" Content="New client"
+                Command="{Binding OpenEventClient}"
+                Classes="Success" Theme="{DynamicResource OutlineButton}" />
+    </Grid>
 </Window>

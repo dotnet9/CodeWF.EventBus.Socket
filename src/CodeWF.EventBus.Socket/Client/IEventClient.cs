@@ -15,6 +15,7 @@ public interface IEventClient
     void Unsubscribe<T>(string subject, Func<T, Task> asyncEventHandler);
 
     bool Publish<T>(string subject, T message, out string errorMessage);
+    TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage, int overtimeMilliseconds = 3000);
 }
 
 public enum ConnectStatus

@@ -15,26 +15,18 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="11.1.1" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="11.1.1" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="11.1.1" />
     <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
     <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.1.1" />
+    <PackageReference Include="Semi.Avalonia" Version="11.1.0" />
+    <PackageReference Include="Irihi.Ursa" Version="1.0.0" />
+    <PackageReference Include="Irihi.Ursa.PrismExtension" Version="1.0.0" />
+    <PackageReference Include="Irihi.Ursa.Themes.Semi" Version="1.0.0" />
+    <PackageReference Include="Prism.Avalonia" Version="8.1.97.11072" />
+    <PackageReference Include="Prism.DryIoc.Avalonia" Version="8.1.97.11072" />
     <PackageReference Include="Avalonia.ReactiveUI" Version="11.1.1" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\CodeWF.EventBus.Socket\CodeWF.EventBus.Socket.csproj" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Compile Update="Views\EventServerView.axaml.cs">
-      <DependentUpon>EventServerView.axaml</DependentUpon>
-    </Compile>
-    <Compile Update="Views\EventClientView.axaml.cs">
-      <DependentUpon>EventClientView.axaml</DependentUpon>
-    </Compile>
-    <Compile Update="Views\EventManagerView.axaml.cs">
-      <DependentUpon>EventManagerView.axaml</DependentUpon>
-    </Compile>
   </ItemGroup>
 </Project>

@@ -3,7 +3,7 @@
 [NetHead(4, 1)]
 internal class RequestPublish : INetObject
 {
-    public int TaskId { get; set; }
+    public string TaskId { get; set; } = null!;
 
     public string Subject { get; set; } = null!;
 

@@ -41,6 +41,13 @@ public class ViewModelBase : ReactiveObject
         {
             Logs.Add($"{DateTime.Now:yyyy-MM-dd HH:mm:ss fff}: {message}");
             RunTip = message;
+        });
+    }
+
+    public void Notification(string message)
+    {
+        Dispatcher.UIThread.Invoke(() =>
+        {
             NotificationManager?.Show(RunTip);
         });
     }

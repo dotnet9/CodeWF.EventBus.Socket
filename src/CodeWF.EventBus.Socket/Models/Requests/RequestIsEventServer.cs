@@ -3,5 +3,5 @@
 [NetHead(1, 1)]
 internal class RequestIsEventServer : INetObject
 {
-    public int TaskId { get; set; }
+    public string TaskId { get; set; } = null!;
 }

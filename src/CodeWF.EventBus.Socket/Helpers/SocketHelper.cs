@@ -2,10 +2,8 @@
 
 internal static class SocketHelper
 {
-    private static int _taskId;
-
-    internal static int GetNewTaskId()
+    internal static string GetNewTaskId()
     {
-        return ++_taskId;
+        return Guid.NewGuid().ToString();
     }
 }

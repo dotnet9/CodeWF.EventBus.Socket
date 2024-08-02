@@ -3,7 +3,7 @@
 [NetHead(254, 1)]
 internal class ResponseCommon : INetObject
 {
-    public int TaskId { get; set; }
+    public string TaskId { get; set; } = null!;
 
     public byte Status { get; set; }
 

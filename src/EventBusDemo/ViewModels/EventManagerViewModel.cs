@@ -1,45 +1,31 @@
 ﻿using System;
 using System.Diagnostics;
-using System.Reflection;
-using Avalonia.Controls.Shapes;
-using ReactiveUI;
 using Path = System.IO.Path;
 
 namespace EventBusDemo.ViewModels
 {
     public class EventManagerViewModel : ViewModelBase
     {
-        private string? _title;
-
-        public string? Title
-        {
-            get => _title;
-            set => this.RaiseAndSetIfChanged(ref _title, value);
-        }
-
-        private string _address = "127.0.0.1:5329";
-
-        public string Address
-        {
-            get => _address;
-            set => this.RaiseAndSetIfChanged(ref _address, value);
-        }
-
         public EventManagerViewModel()
         {
-            Title = $"EventBus management, process ID is {Process.GetCurrentProcess().Id}";
+            Title = $"EventBus center, PID[{Process.GetCurrentProcess().Id}]";
+            Address = "127.0.0.1:5329";
         }
 
         public void OpenEventServer()
         {
-            var exePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EventBusDemo.exe");
-            Process.Start(exePath, ["-type", "server", "-address", Address]);
+            OpenNewExe(isServer: true);
         }
 
         public void OpenEventClient()
         {
+            OpenNewExe(isServer: false);
+        }
+
+        private void OpenNewExe(bool isServer)
+        {
             var exePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EventBusDemo.exe");
-            Process.Start(exePath, ["-type", "client", "-address", Address]);
+            Process.Start(exePath, ["-type", isServer ? "server" : "client", "-address", Address]);
         }
     }
 }

@@ -161,6 +161,10 @@ public class EventServer : IEventServer
                         {
                             HandleRequest(tcpClient, buffer.Deserialize<RequestPublish>());
                         }
+                        else if (headInfo.IsNetObject<RequestQuery>())
+                        {
+                            //HandleRequest(tcpClient, buffer.Deserialize<RequestQuery>());
+                        }
                         else if (headInfo.IsNetObject<Heartbeat>())
                         {
                             HandleRequest(tcpClient, buffer.Deserialize<Heartbeat>());

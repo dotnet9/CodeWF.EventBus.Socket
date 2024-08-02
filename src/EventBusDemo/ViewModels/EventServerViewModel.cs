@@ -2,6 +2,7 @@
 using ReactiveUI;
 using System;
 using System.Diagnostics;
+using EventBusDemo.Services;
 
 namespace EventBusDemo.ViewModels
 {
@@ -9,9 +10,10 @@ namespace EventBusDemo.ViewModels
     {
         private IEventServer? _eventServer;
 
-        public EventServerViewModel()
+        public EventServerViewModel(ApplicationConfig  config)
         {
-            Title = $"EventBus server, process ID is {Process.GetCurrentProcess().Id}";
+            Address = config.GetHost();
+            Title = $"EventBus Server, PID[{Process.GetCurrentProcess().Id}]";
         }
 
         public void RunServer()

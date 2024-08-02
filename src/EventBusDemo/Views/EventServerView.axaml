@@ -3,30 +3,38 @@
         xmlns:vm="using:EventBusDemo.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:prism="http://prismlibrary.com/"
+        prism:ViewModelLocator.AutoWireViewModel="True"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
-        Width="800" Height="450"
+        Width="800" Height="450" Padding="20"
+        WindowStartupLocation="CenterScreen"
         x:Class="EventBusDemo.Views.EventServerView"
         x:DataType="vm:EventServerViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="{Binding Title}">
-
-    <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
-        <vm:EventServerViewModel />
-    </Design.DataContext>
+    <Window.Styles>
+        <Style Selector="Button">
+            <Setter Property="Width" Value="80" />
+            <Setter Property="Height" Value="35" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+        </Style>
+    </Window.Styles>
     <Grid RowDefinitions="Auto *">
         <StackPanel Orientation="Horizontal">
-            <TextBlock>
+            <TextBlock VerticalAlignment="Center">
                 <Run Text="Event service address：" />
                 <Run Text="{Binding Address}" />
             </TextBlock>
-            <Button Content="Run" Command="{Binding RunServer}" />
-            <Button Content="Stop" Command="{Binding Stop}" />
-            <TextBlock Text="{Binding RunTip}" />
+            <Button Content="Run" Command="{Binding RunServer}"
+                    Classes="Success" Theme="{DynamicResource SolidButton}"  Margin="20 0"/>
+            <Button Content="Stop" Command="{Binding Stop}"
+                    Classes="Danger" Theme="{DynamicResource SolidButton}" />
+            <TextBlock Text="{Binding RunTip}" VerticalAlignment="Center" />
         </StackPanel>
-        <HeaderedContentControl Grid.Row="1" Header="Log">
-            <ListBox ItemsSource="{Binding Logs,Mode=OneWay}" />
-        </HeaderedContentControl>
+        <Border Grid.Row="1" Classes="Hover" Theme="{StaticResource CardBorder}" Padding="5">
+            <HeaderedContentControl Header="Log">
+                <ListBox ItemsSource="{Binding Logs,Mode=OneWay}" />
+            </HeaderedContentControl>
+        </Border>
     </Grid>
 </Window>
