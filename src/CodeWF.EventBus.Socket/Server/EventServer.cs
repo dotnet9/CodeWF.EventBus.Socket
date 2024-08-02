@@ -221,8 +221,11 @@ public class EventServer : IEventServer
                 sockets = [client];
                 _subjectAndClients.TryAdd(command.Subject, sockets);
             }
-
-            sockets.Add(client);
+            else // if (!sockets.Contains(client))
+            {
+                sockets.Add(client);
+            }
+            
 
             SendCommand(client, new ResponseCommon()
             {

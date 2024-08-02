@@ -7,7 +7,7 @@
 		<OutputType>Library</OutputType>
 		<IsPackable>true</IsPackable>
 		<Version>0.0.4</Version>
-		<Authors>沙漠尽头的狼</Authors>
+		<Authors>沙漠尽头的狼;G2Cy</Authors>
 		<Description>Distributed event bus implemented using Socket, independent of third-party MQ.</Description>
 		<RepositoryUrl>https://github.com/dotnet9/CodeWF.EventBus.Socket</RepositoryUrl>
 		<PackageLicenseExpression>MIT</PackageLicenseExpression>
