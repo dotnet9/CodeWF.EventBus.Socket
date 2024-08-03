@@ -17,6 +17,7 @@
     <PackageReference Include="Avalonia.Desktop" Version="11.1.1" />
     <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
     <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.1.1" />
+    <PackageReference Include="CodeWF.LogViewer.Avalonia.Log4Net" Version="1.0.3" />
     <PackageReference Include="Semi.Avalonia" Version="11.1.0" />
     <PackageReference Include="Irihi.Ursa" Version="1.0.0" />
     <PackageReference Include="Irihi.Ursa.PrismExtension" Version="1.0.0" />
@@ -28,5 +29,11 @@
 
   <ItemGroup>
     <ProjectReference Include="..\CodeWF.EventBus.Socket\CodeWF.EventBus.Socket.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="log4net.config">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
   </ItemGroup>
 </Project>

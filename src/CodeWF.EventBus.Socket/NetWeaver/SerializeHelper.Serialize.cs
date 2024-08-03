@@ -141,19 +141,13 @@ public partial class SerializeHelper
 
         var genericArguments = valueType.GetGenericArguments();
         if (value is IList list)
-        {
             foreach (var item in list)
-            {
                 SerializeValue(writer, item, genericArguments[0]);
-            }
-        }
-        else if(value is IDictionary dictionary)
-        {
+        else if (value is IDictionary dictionary)
             foreach (DictionaryEntry item in dictionary)
             {
                 SerializeValue(writer, item.Key, genericArguments[0]);
                 SerializeValue(writer, item.Value, genericArguments[1]);
             }
-        }
     }
 }

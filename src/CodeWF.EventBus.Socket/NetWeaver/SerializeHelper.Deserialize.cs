@@ -6,6 +6,7 @@ public partial class SerializeHelper
     {
         return DeserializeObject<T>(buffer, PacketHeadLen);
     }
+
     public static T DeserializeObject<T>(this byte[] buffer, int readIndex = 0) where T : new()
     {
         using (var stream = new MemoryStream(buffer, readIndex, buffer.Length - readIndex))
@@ -18,6 +19,7 @@ public partial class SerializeHelper
             }
         }
     }
+
     public static object DeserializeObject(this byte[] buffer, Type type, int readIndex = 0)
     {
         using (var stream = new MemoryStream(buffer, readIndex, buffer.Length - readIndex))

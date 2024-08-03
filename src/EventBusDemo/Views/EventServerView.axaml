@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:prism="http://prismlibrary.com/"
+        xmlns:log="https://codewf.com"
         prism:ViewModelLocator.AutoWireViewModel="True"
         mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="450"
         Width="800" Height="450" Padding="20"
@@ -26,15 +27,12 @@
                 <Run Text="{Binding Address}" />
             </TextBlock>
             <Button Content="Run" Command="{Binding RunServer}"
-                    Classes="Success" Theme="{DynamicResource SolidButton}"  Margin="20 0"/>
+                    Classes="Success" Theme="{DynamicResource SolidButton}" Margin="20 0" />
             <Button Content="Stop" Command="{Binding Stop}"
                     Classes="Danger" Theme="{DynamicResource SolidButton}" />
-            <TextBlock Text="{Binding RunTip}" VerticalAlignment="Center" />
         </StackPanel>
         <Border Grid.Row="1" Classes="Hover" Theme="{StaticResource CardBorder}" Padding="5">
-            <HeaderedContentControl Header="Log">
-                <ListBox ItemsSource="{Binding Logs,Mode=OneWay}" />
-            </HeaderedContentControl>
+            <log:LogView />
         </Border>
     </Grid>
 </Window>

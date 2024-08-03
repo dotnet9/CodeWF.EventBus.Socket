@@ -1,12 +1,11 @@
 using Avalonia.Controls;
 
-namespace EventBusDemo.Views
+namespace EventBusDemo.Views;
+
+public partial class EventManagerView : Window
 {
-    public partial class EventManagerView : Window
+    public EventManagerView()
     {
-        public EventManagerView()
-        {
-            InitializeComponent();
-        }
+        InitializeComponent();
     }
 }

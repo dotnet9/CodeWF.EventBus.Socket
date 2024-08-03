@@ -2,11 +2,17 @@
 
 简体中文 | [English](README.md)
 
-**使用Socket实现的分布式事件总线，不依赖第三方MQ。**
+**使用Socket实现的分布式事件总线，支持CQRS，不依赖第三方MQ。**
 
 `CodeWF.EventBus.Socket` 是一个轻量级的、基于Socket的分布式事件总线系统，旨在简化分布式架构中的事件通信。它允许进程之间通过发布/订阅模式进行通信，无需依赖外部消息队列服务。
 
-![](doc/imgs/structure.png)
+**Command**
+
+![Command](doc/imgs/command.png)
+
+**Query**
+
+![Query](doc/imgs/query.png)
 
 ## 特性
 
@@ -36,7 +42,7 @@ Install-Package CodeWF.EventBus.Socket
 
 ### 运行事件服务
 
-在服务端代码中，创建并启动`EventServer`实例以监听客户端连接和事件。
+在服务端代码中，创建并启动`EventServer`实例以监听客户端连接和事件：
 
 ```csharp
 using CodeWF.EventBus.Socket;
@@ -50,7 +56,7 @@ eventServer.Start("127.0.0.1", 9100);
 
 ### 停止事件服务
 
-当不再需要事件服务时，调用`Stop`方法以优雅地关闭服务器。
+当不再需要事件服务时，调用`Stop`方法以优雅地关闭服务器：
 
 ```csharp
 eventServer.Stop();
@@ -60,7 +66,7 @@ eventServer.Stop();
 
 ### 连接事件服务
 
-在客户端代码中，创建`EventClient`实例并连接到事件服务器。
+在客户端代码中，创建`EventClient`实例并连接到事件服务器：
 
 ```csharp
 using CodeWF.EventBus.Socket;
@@ -74,30 +80,74 @@ eventClient.Connect("127.0.0.1", 9100));
 
 ### 订阅事件
 
-订阅特定类型的事件，并指定事件处理函数。
+订阅特定类型的事件，并指定事件处理函数：
 
 ```csharp
-eventClient.Subscribe<NewEmailNotification>("event.email.new", ReceiveNewEmail);
+eventClient.Subscribe<NewEmailCommand>("event.email.new", ReceiveNewEmailCommand);
 
-private void ReceiveNewEmail(NewEmailNotification message)
+private void ReceiveNewEmail(NewEmailCommand command)
 {
     // 处理新邮件通知
     Console.WriteLine($"收到新邮件，主题是{message.Subject}");
 }
 ```
 
-### 发布事件
+### 发布命令(Command)
 
-发布事件到指定的主题，供已订阅的客户端处理。
+发布事件到指定的主题，供已订阅的客户端处理：
 
 ```csharp
 // 发布新邮件通知事件
-eventClient.Publish("event.email.new", new NewEmailNotification { Subject = "恭喜您中Github一等奖", Content = "我们很开心，您在2024年7月...", SendTime = new DateTime(2024, 7, 27) });
+eventClient.Publish("event.email.new", new NewEmailCommand { Subject = "恭喜您中Github一等奖", Content = "我们很开心，您在2024年7月...", SendTime = new DateTime(2024, 7, 27) });
 ```
+
+### 查询(Query)
+
+查询指定主题，需要有接收查询端订阅相同的主题（即生产者），收到请求后，再以相同的主题发布查询结果：
+
+```csharp
+eventClient.Subscribe<EmailQuery>("event.email.query", ReceiveEmailQuery);
+
+private void ReceiveEmailQuery(EmailQuery query)
+{
+    // 执行查询请求，准备查询结果
+    var response = new EmailQueryResponse { Emails = EmailManager.QueryEmail(request.Subject) };
+    
+    // 以相同的主题，发布查询结果
+    if (_eventClient!.Publish("event.email.query", response,
+        out var errorMessage))
+    {
+        LogFactory.Instance.Log.Info($"Response query result: {response}");
+    }
+    else
+    {
+        LogFactory.Instance.Log.Error($"Response query failed: {errorMessage}");
+    }
+}
+```
+
+其他端可使用相同的主题查询（即消费者）：
+
+```csharp
+var response = _eventClient!.Query<EmailQuery, EmailQueryResponse>("event.email.query",
+    new EmailQuery() { Subject = "Account" },
+    out var errorMessage);
+if (string.IsNullOrWhiteSpace(errorMessage) && response != null)
+{
+    LogFactory.Instance.Log.Info($"Query event.email.query, result: {response}");
+}
+else
+{
+    LogFactory.Instance.Log.Error(
+        $"Query event.email.query failed: [{errorMessage}]");
+}
+```
+
+
 
 ### 取消订阅事件
 
-不再需要接收某类事件时，可以取消订阅。
+不再需要接收某类事件时，可以取消订阅：
 
 ```csharp
 eventClient.Unsubscribe<NewEmailNotification>("event.email.new", ReceiveNewEmail);
@@ -105,7 +155,7 @@ eventClient.Unsubscribe<NewEmailNotification>("event.email.new", ReceiveNewEmail
 
 ### 断开事件服务
 
-完成事件处理或需要断开与服务器的连接时，调用`Disconnect`方法。
+完成事件处理或需要断开与服务器的连接时，调用`Disconnect`方法：
 
 ```csharp
 eventClient.Disconnect();

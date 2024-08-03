@@ -4,9 +4,10 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:prism="http://prismlibrary.com/"
+        xmlns:log="https://codewf.com"
         prism:ViewModelLocator.AutoWireViewModel="True"
-        mc:Ignorable="d" d:DesignWidth="800" d:DesignHeight="900"
-        Width="800" Height="900" Padding="20"
+        mc:Ignorable="d" d:DesignWidth="1000" d:DesignHeight="800"
+        Width="1000" Height="800" Padding="20"
         WindowStartupLocation="CenterScreen"
         x:Class="EventBusDemo.Views.EventClientView"
         x:DataType="vm:EventClientViewModel"
@@ -35,20 +36,19 @@
                     Margin="20 0" />
             <Button Content="Disconnect" Command="{Binding Disconnect}"
                     Classes="Danger" Theme="{DynamicResource SolidButton}" />
-            <TextBlock Text="{Binding RunTip}" VerticalAlignment="Center" />
         </StackPanel>
         <HeaderedContentControl Header="Subscribe | Unsubscribe" Grid.Row="1" Grid.Column="0"
                                 Margin="0 0 10 0" Theme="{DynamicResource GroupBox}">
             <UniformGrid Columns="1">
                 <CheckBox
                     Content="Send Email Command"
-                    IsChecked="{Binding IsSubscribeSendEmailCommand}" Command="{Binding  SubscribeOrUnsubscribeEvent}"
-                    CommandParameter="SendEmailCommand"
+                    IsChecked="{Binding IsSubscribeSendEmailCommand}"
+                    Command="{Binding  SubscribeOrUnsubscribeSendEmailCommand}"
                     Theme="{DynamicResource CardCheckBox}" />
                 <CheckBox
                     Content="Email Query"
-                    IsChecked="{Binding IsSubscribeEmailQuery}" Command="{Binding  SubscribeOrUnsubscribeEvent}"
-                    CommandParameter="EmailQuery"
+                    IsChecked="{Binding IsSubscribeEmailQuery}"
+                    Command="{Binding  SubscribeOrUnsubscribeEmailQuery}"
                     Theme="{DynamicResource CardCheckBox}" />
             </UniformGrid>
         </HeaderedContentControl>
@@ -63,19 +63,18 @@
                     </Style>
                 </UniformGrid.Styles>
                 <Button
-                    Content="Publish Send Email" Command="{Binding PublishOrQueryEvent}"
-                    CommandParameter="SendEmailCommand"
+                    Content="Publish Send Email"
+                    Command="{Binding PublishNewEmailCommand}"
                     Classes="Primary" Theme="{DynamicResource OutlineButton}" />
                 <Button
-                    Content="Query Email" Command="{Binding PublishOrQueryEvent}" CommandParameter="EmailQuery"
+                    Content="Query Email"
+                    Command="{Binding QueryEmailQuery}"
                     Classes="Success" Theme="{DynamicResource OutlineButton}" />
             </UniformGrid>
         </HeaderedContentControl>
         <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="Hover" Theme="{StaticResource CardBorder}" Margin="0 10 0 0"
                 Padding="5">
-            <HeaderedContentControl Header="Log">
-                <ListBox x:Name="LogListBox" ItemsSource="{Binding Logs, Mode=OneWay}" />
-            </HeaderedContentControl>
+            <log:LogView />
         </Border>
     </Grid>
 </Window>

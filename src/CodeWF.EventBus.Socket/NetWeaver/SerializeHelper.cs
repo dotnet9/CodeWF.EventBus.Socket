@@ -4,10 +4,9 @@ public partial class SerializeHelper
 {
     public const int PacketHeadLen = 22;
 
-    private static readonly ConcurrentDictionary<string, List<PropertyInfo>> ObjectPropertyInfos =
-        new ConcurrentDictionary<string, List<PropertyInfo>>();
+    private static readonly ConcurrentDictionary<string, List<PropertyInfo>> ObjectPropertyInfos = new();
 
-    private static readonly List<string> ComplexTypeNames = new List<string>()
+    private static readonly List<string> ComplexTypeNames = new()
     {
         typeof(List<>).Name,
         typeof(Dictionary<,>).Name

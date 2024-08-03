@@ -5,8 +5,8 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:prism="http://prismlibrary.com/"
         prism:ViewModelLocator.AutoWireViewModel="True"
-        mc:Ignorable="d" d:DesignWidth="400" d:DesignHeight="200"
-        Width="400" Height="200" Padding="20"
+        mc:Ignorable="d" d:DesignWidth="350" d:DesignHeight="150"
+        Width="350" Height="150" Padding="20"
         x:Class="EventBusDemo.Views.EventManagerView"
         x:DataType="vm:EventManagerViewModel"
         WindowStartupLocation="CenterScreen"
@@ -25,14 +25,18 @@
             <Setter Property="HorizontalAlignment" Value="Right" />
         </Style>
     </Window.Styles>
-    <Grid RowDefinitions="Auto Auto Auto *" ColumnDefinitions="Auto Auto *">
-        <TextBlock Text="Address：" Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" />
-        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Address}" Width="200" />
-        <Button Grid.Row="1" Grid.Column="1" Content="New server"
-                Command="{Binding OpenEventServer}" Margin="0 15"
-                Classes="Primary" Theme="{DynamicResource SolidButton}" />
-        <Button Grid.Row="2" Grid.Column="1" Content="New client"
-                Command="{Binding OpenEventClient}"
-                Classes="Success" Theme="{DynamicResource OutlineButton}" />
-    </Grid>
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal">
+            <TextBlock Text="Address：" VerticalAlignment="Center" />
+            <TextBox Text="{Binding Address}" Width="200" />
+        </StackPanel>
+        <StackPanel Orientation="Horizontal" Margin="0 20 0 0">
+            <Button Content="New server"
+                    Command="{Binding OpenEventServer}" Margin="0 0 40 0"
+                    Classes="Primary" Theme="{DynamicResource SolidButton}" />
+            <Button Content="New client"
+                    Command="{Binding OpenEventClient}"
+                    Classes="Success" Theme="{DynamicResource OutlineButton}" />
+        </StackPanel>
+    </StackPanel>
 </Window>

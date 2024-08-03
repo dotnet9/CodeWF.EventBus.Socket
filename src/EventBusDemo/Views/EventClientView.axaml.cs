@@ -3,24 +3,24 @@ using Avalonia.Controls.Notifications;
 using Avalonia.Interactivity;
 using EventBusDemo.ViewModels;
 
-namespace EventBusDemo.Views
-{
-    public partial class EventClientView : Window
-    {
-        public EventClientView()
-        {
-            InitializeComponent();
-        }
-        protected override void OnLoaded(RoutedEventArgs e)
-        {
-            base.OnLoaded(e);
-            var vm = DataContext as ViewModelBase;
-            if (vm is not { NotificationManager: null }) return;
-            var topLevel = GetTopLevel(this);
-            vm.NotificationManager =
-                new WindowNotificationManager(topLevel) { MaxItems = 3 };
+namespace EventBusDemo.Views;
 
-            var logListBox = this.FindControl<ListBox>("LogListBox");
-        }
+public partial class EventClientView : Window
+{
+    public EventClientView()
+    {
+        InitializeComponent();
+    }
+
+    protected override void OnLoaded(RoutedEventArgs e)
+    {
+        base.OnLoaded(e);
+        var vm = DataContext as ViewModelBase;
+        if (vm is not { NotificationManager: null }) return;
+        var topLevel = GetTopLevel(this);
+        vm.NotificationManager =
+            new WindowNotificationManager(topLevel) { MaxItems = 3 };
+
+        var logListBox = this.FindControl<ListBox>("LogListBox");
     }
 }

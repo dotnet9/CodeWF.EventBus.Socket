@@ -8,10 +8,7 @@ public static class ReflectionExtension
         if (string.IsNullOrEmpty(propertyName)) throw new ArgumentNullException(nameof(propertyName));
 
         var propertyInfo = obj.GetType().GetProperty(propertyName);
-        if (propertyInfo == null)
-        {
-            return defaultValue;
-        }
+        if (propertyInfo == null) return defaultValue;
 
         var value = propertyInfo.GetValue(obj);
 

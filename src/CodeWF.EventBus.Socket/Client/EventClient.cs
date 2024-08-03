@@ -1,23 +1,22 @@
-﻿// ReSharper disable once CheckNamespace
+﻿using Heartbeat = CodeWF.EventBus.Socket.Models.Heartbeat;
 
-using Heartbeat = CodeWF.EventBus.Socket.Models.Heartbeat;
-
+// ReSharper disable once CheckNamespace
 namespace CodeWF.EventBus.Socket;
 
 public class EventClient : IEventClient
 {
-    private System.Net.Sockets.Socket? _client;
-    private string? _host;
-    private int _port;
-    private CancellationTokenSource? _cancellationTokenSource;
-
-    private readonly ConcurrentDictionary<string, List<Delegate>> _subjectAndHandlers = new();
-    private readonly ConcurrentDictionary<string, UpdateEvent> _queryTaskIdAndResponse = new();
+    private const int ReconnectInterval = 3000;
+    private readonly ConcurrentDictionary<string, UpdateEvent?> _queryTaskIdAndResponse = new();
 
     private readonly BlockingCollection<SocketCommand> _responses = new(new ConcurrentQueue<SocketCommand>());
 
+    private readonly ConcurrentDictionary<string, List<Delegate>> _subjectAndHandlers = new();
+    private CancellationTokenSource? _cancellationTokenSource;
+    private System.Net.Sockets.Socket? _client;
+    private string? _host;
+    private int _port;
+
     private string? _requestIsEventServerTaskId;
-    private const int ReconnectInterval = 3000;
 
     #region interface methods
 
@@ -35,7 +34,6 @@ public class EventClient : IEventClient
         Task.Factory.StartNew(async () =>
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
-            {
                 try
                 {
                     _client = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream,
@@ -57,7 +55,6 @@ public class EventClient : IEventClient
                 {
                     // TODO Need to handle event services that are connected incorrectly (i.e. event services are not responding to its type correctly)
                 }
-            }
         }, _cancellationTokenSource.Token);
     }
 
@@ -95,17 +92,19 @@ public class EventClient : IEventClient
     {
         if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
         {
-            handlers = [];
+            handlers = [eventHandler];
             _subjectAndHandlers.TryAdd(subject, handlers);
 
-            SendCommand(new RequestSubscribe()
+            SendCommand(new RequestSubscribe
             {
                 TaskId = SocketHelper.GetNewTaskId(),
                 Subject = subject
             });
         }
-
-        handlers.Add(eventHandler);
+        else
+        {
+            handlers.Add(eventHandler);
+        }
     }
 
     public void Unsubscribe<T>(string subject, Action<T> eventHandler)
@@ -116,7 +115,7 @@ public class EventClient : IEventClient
         if (handlers.Count > 0) return;
 
         _subjectAndHandlers.TryRemove(subject, out _);
-        SendCommand(new RequestUnsubscribe()
+        SendCommand(new RequestUnsubscribe
         {
             TaskId = SocketHelper.GetNewTaskId(),
             Subject = subject
@@ -131,7 +130,7 @@ public class EventClient : IEventClient
         if (handlers.Count > 0) return;
 
         _subjectAndHandlers.TryRemove(subject, out _);
-        SendCommand(new RequestUnsubscribe()
+        SendCommand(new RequestUnsubscribe
         {
             TaskId = SocketHelper.GetNewTaskId(),
             Subject = subject
@@ -159,14 +158,16 @@ public class EventClient : IEventClient
         }
     }
 
-    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage, int overtimeMilliseconds)
+    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage,
+        int overtimeMilliseconds)
     {
         errorMessage = string.Empty;
+        var taskId = SocketHelper.GetNewTaskId();
         try
         {
-            var request = new RequestQuery()
+            var request = new RequestQuery
             {
-                TaskId = SocketHelper.GetNewTaskId(),
+                TaskId = taskId,
                 Subject = subject,
                 Buffer = message.SerializeObject()
             };
@@ -175,21 +176,15 @@ public class EventClient : IEventClient
             if (!ActionHelper.CheckOvertime(() =>
                 {
                     while (_cancellationTokenSource is { IsCancellationRequested: false }
-                           && _queryTaskIdAndResponse.TryGetValue(request.TaskId, out var value)
-                           && value == default)
-                    {
+                           && _queryTaskIdAndResponse.TryGetValue(taskId, out var updateEvent)
+                           && updateEvent == default)
                         Thread.Sleep(TimeSpan.FromMilliseconds(10));
-                    }
                 }, overtimeMilliseconds))
-            {
                 throw new Exception("Query timeout, please try again!");
-            }
 
-            if (_queryTaskIdAndResponse.TryGetValue(request.TaskId, out var value)
+            if (_queryTaskIdAndResponse.TryGetValue(taskId, out var value)
                 && value != null)
-            {
                 return (TResponse)value.Buffer!.DeserializeObject(typeof(TResponse));
-            }
 
             return default;
         }
@@ -197,7 +192,11 @@ public class EventClient : IEventClient
         {
             errorMessage = ex.Message;
             Debug.WriteLine(ex.Message);
-            return default(TResponse);
+            return default;
+        }
+        finally
+        {
+            _queryTaskIdAndResponse.TryRemove(taskId, out _);
         }
     }
 
@@ -210,13 +209,10 @@ public class EventClient : IEventClient
         Task.Factory.StartNew(() =>
         {
             while (_client != null && _cancellationTokenSource is { IsCancellationRequested: false })
-            {
                 try
                 {
                     if (_client.ReadPacket(out var buffer, out var headInfo))
-                    {
                         _responses.Add(new SocketCommand(headInfo, buffer, _client));
-                    }
                 }
                 catch (SocketException ex)
                 {
@@ -227,7 +223,6 @@ public class EventClient : IEventClient
                 {
                     Debug.Write($"Receive data exception：{ex.Message}");
                 }
-            }
 
             return Task.CompletedTask;
         });
@@ -242,13 +237,8 @@ public class EventClient : IEventClient
                 if (!_responses.TryTake(out var response, TimeSpan.FromMilliseconds(10))) continue;
 
                 if (response.IsMessage<ResponseCommon>())
-                {
                     HandleResponse(response.Message<ResponseCommon>());
-                }
-                else if (response.IsMessage<UpdateEvent>())
-                {
-                    HandleResponse(response.Message<UpdateEvent>());
-                }
+                else if (response.IsMessage<UpdateEvent>()) HandleResponse(response.Message<UpdateEvent>());
             }
         });
     }
@@ -288,16 +278,14 @@ public class EventClient : IEventClient
     private void CheckIsEventServer()
     {
         _requestIsEventServerTaskId = SocketHelper.GetNewTaskId();
-        SendCommand(new RequestIsEventServer() { TaskId = _requestIsEventServerTaskId },
-            needCheckConnectStatus: false);
+        SendCommand(new RequestIsEventServer { TaskId = _requestIsEventServerTaskId },
+            false);
 
         if (!ActionHelper.CheckOvertime(() =>
             {
                 while (_cancellationTokenSource is { IsCancellationRequested: false } &&
                        _requestIsEventServerTaskId != null)
-                {
                     Thread.Sleep(TimeSpan.FromMilliseconds(10));
-                }
             }))
         {
             ConnectStatus = ConnectStatus.DisconnectedNeedCheckEventServer;
@@ -311,10 +299,7 @@ public class EventClient : IEventClient
 
     private void HandleResponse(ResponseCommon response)
     {
-        if (_requestIsEventServerTaskId == response.TaskId)
-        {
-            _requestIsEventServerTaskId = null;
-        }
+        if (_requestIsEventServerTaskId == response.TaskId) _requestIsEventServerTaskId = null;
     }
 
     private void HandleResponse(UpdateEvent response)
@@ -327,34 +312,26 @@ public class EventClient : IEventClient
 
         if (!_subjectAndHandlers.TryGetValue(response.Subject, out var handlers)) return;
         foreach (var handler in handlers)
-        {
             try
             {
                 var param1 = handler.Method.GetParameters().First();
                 var param1Type = param1.ParameterType;
                 var param1Value = response.Buffer?.DeserializeObject(param1Type);
                 if (handler.Method.ReturnType == typeof(Task))
-                {
                     ((Task)handler.DynamicInvoke(param1Value)).GetAwaiter().GetResult();
-                }
                 else
-                {
                     handler.DynamicInvoke(param1Value);
-                }
             }
             catch (Exception ex)
             {
                 Debug.Write($"Send data exception：{ex.Message}");
             }
-        }
     }
 
     private void SendCommand(INetObject command, bool needCheckConnectStatus = true)
     {
         if (needCheckConnectStatus && ConnectStatus != ConnectStatus.Connected)
-        {
             throw new Exception("Event service not connected, unable to send event!");
-        }
 
         var buffer = command.Serialize(DateTime.Now.ToFileTimeUtc());
         _client?.Send(buffer);
