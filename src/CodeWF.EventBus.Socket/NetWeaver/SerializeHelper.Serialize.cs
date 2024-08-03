@@ -32,7 +32,19 @@ public partial class SerializeHelper
         {
             using (var writer = new BinaryWriter(stream, DefaultEncoding))
             {
-                SerializeProperties(writer, data);
+                SerializeValue(writer, data, typeof(T));
+                return stream.ToArray();
+            }
+        }
+    }
+
+    public static byte[] SerializeObject(this object data, Type type)
+    {
+        using (var stream = new MemoryStream())
+        {
+            using (var writer = new BinaryWriter(stream, DefaultEncoding))
+            {
+                SerializeValue(writer, data, type);
                 return stream.ToArray();
             }
         }

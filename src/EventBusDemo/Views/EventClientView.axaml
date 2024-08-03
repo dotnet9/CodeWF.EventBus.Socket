@@ -39,36 +39,54 @@
         </StackPanel>
         <HeaderedContentControl Header="Subscribe | Unsubscribe" Grid.Row="1" Grid.Column="0"
                                 Margin="0 0 10 0" Theme="{DynamicResource GroupBox}">
-            <UniformGrid Columns="1">
+            <UniformGrid Columns="2">
                 <CheckBox
-                    Content="Send Email Command"
+                    Content="NewEmailCommand"
                     IsChecked="{Binding IsSubscribeSendEmailCommand}"
                     Command="{Binding  SubscribeOrUnsubscribeSendEmailCommand}"
                     Theme="{DynamicResource CardCheckBox}" />
                 <CheckBox
-                    Content="Email Query"
+                    Content="UpdateTimeCommand"
+                    IsChecked="{Binding IsSubscribeUpdateTimeCommand}"
+                    Command="{Binding  SubscribeOrUnsubscribeUpdateTimeCommand}"
+                    Theme="{DynamicResource CardCheckBox}" />
+                <CheckBox
+                    Content="EmailQuery"
                     IsChecked="{Binding IsSubscribeEmailQuery}"
                     Command="{Binding  SubscribeOrUnsubscribeEmailQuery}"
+                    Theme="{DynamicResource CardCheckBox}" />
+                <CheckBox
+                    Content="TimeQuery"
+                    IsChecked="{Binding IsSubscribeTimeQuery}"
+                    Command="{Binding  SubscribeOrUnsubscribeTimeQuery}"
                     Theme="{DynamicResource CardCheckBox}" />
             </UniformGrid>
         </HeaderedContentControl>
         <HeaderedContentControl Header="Publish | Query" Grid.Row="1" Grid.Column="1"
                                 Margin="10 0 0 0" Theme="{DynamicResource GroupBox}">
-            <UniformGrid Columns="1">
+            <UniformGrid Columns="2">
                 <UniformGrid.Styles>
                     <Style Selector="Button">
-                        <Setter Property="Width" Value="160" />
+                        <Setter Property="Width" Value="180" />
                         <Setter Property="Height" Value="60" />
                         <Setter Property="Margin" Value="5" />
                     </Style>
                 </UniformGrid.Styles>
                 <Button
-                    Content="Publish Send Email"
+                    Content="NewEmailCommand"
                     Command="{Binding PublishNewEmailCommand}"
                     Classes="Primary" Theme="{DynamicResource OutlineButton}" />
                 <Button
-                    Content="Query Email"
+                    Content="UpdateTimeCommand"
+                    Command="{Binding PublishUpdateTimeCommand}"
+                    Classes="Primary" Theme="{DynamicResource OutlineButton}" />
+                <Button
+                    Content="EmailQuery"
                     Command="{Binding QueryEmailQuery}"
+                    Classes="Success" Theme="{DynamicResource OutlineButton}" />
+                <Button
+                    Content="TimeQuery"
+                    Command="{Binding QueryTimeQuery}"
                     Classes="Success" Theme="{DynamicResource OutlineButton}" />
             </UniformGrid>
         </HeaderedContentControl>

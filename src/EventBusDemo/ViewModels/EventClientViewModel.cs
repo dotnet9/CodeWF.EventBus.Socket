@@ -13,10 +13,11 @@ public class EventClientViewModel : ViewModelBase
 {
     private IEventClient? _eventClient;
 
-    private bool _isSubscribeEmailQuery;
-
 
     private bool _isSubscribeSendEmailCommand;
+    private bool _isSubscribeUpdateTimeCommand;
+    private bool _isSubscribeEmailQuery;
+    private bool _isSubscribeTimeQuery;
 
     public EventClientViewModel(ApplicationConfig config)
     {
@@ -30,10 +31,22 @@ public class EventClientViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _isSubscribeSendEmailCommand, value);
     }
 
+    public bool IsSubscribeUpdateTimeCommand
+    {
+        get => _isSubscribeUpdateTimeCommand;
+        set => this.RaiseAndSetIfChanged(ref _isSubscribeUpdateTimeCommand, value);
+    }
+
     public bool IsSubscribeEmailQuery
     {
         get => _isSubscribeEmailQuery;
         set => this.RaiseAndSetIfChanged(ref _isSubscribeEmailQuery, value);
+    }
+
+    public bool IsSubscribeTimeQuery
+    {
+        get => _isSubscribeTimeQuery;
+        set => this.RaiseAndSetIfChanged(ref _isSubscribeTimeQuery, value);
     }
 
     public void ConnectServer()
@@ -68,6 +81,16 @@ public class EventClientViewModel : ViewModelBase
             _eventClient?.Subscribe<NewEmailCommand>(EventNames.SendEmailCommand, ReceiveNewEmailCommand);
     }
 
+    public void SubscribeOrUnsubscribeUpdateTimeCommand()
+    {
+        if (!CheckIfEventConnected(true)) return;
+
+        if (!IsSubscribeUpdateTimeCommand)
+            _eventClient?.Unsubscribe<long>(EventNames.UpdateTimeCommand, ReceiveUpdateTimeCommand);
+        else
+            _eventClient?.Subscribe<long>(EventNames.UpdateTimeCommand, ReceiveUpdateTimeCommand);
+    }
+
     public void SubscribeOrUnsubscribeEmailQuery()
     {
         if (!CheckIfEventConnected(true)) return;
@@ -76,6 +99,16 @@ public class EventClientViewModel : ViewModelBase
             _eventClient?.Unsubscribe<EmailQuery>(EventNames.EmailQuery, ReceiveEmailQuery);
         else
             _eventClient?.Subscribe<EmailQuery>(EventNames.EmailQuery, ReceiveEmailQuery);
+    }
+
+    public void SubscribeOrUnsubscribeTimeQuery()
+    {
+        if (!CheckIfEventConnected(true)) return;
+
+        if (!IsSubscribeTimeQuery)
+            _eventClient?.Unsubscribe<string>(EventNames.TimeQuery, ReceiveTimeQuery);
+        else
+            _eventClient?.Subscribe<string>(EventNames.TimeQuery, ReceiveTimeQuery);
     }
 
     public void PublishNewEmailCommand()
@@ -89,6 +122,19 @@ public class EventClientViewModel : ViewModelBase
         else
             LogFactory.Instance.Log.Error(
                 $"Publish {EventNames.SendEmailCommand} failed: [{errorMessage}]");
+    }
+
+    public void PublishUpdateTimeCommand()
+    {
+        if (!CheckIfEventConnected(true)) return;
+
+        if (_eventClient!.Publish(EventNames.UpdateTimeCommand,
+                DateTimeOffset.Now.ToUnixTimeSeconds(),
+                out var errorMessage))
+            LogFactory.Instance.Log.Info($"Publish {EventNames.UpdateTimeCommand}");
+        else
+            LogFactory.Instance.Log.Error(
+                $"Publish {EventNames.UpdateTimeCommand} failed: [{errorMessage}]");
     }
 
     public void QueryEmailQuery()
@@ -105,10 +151,28 @@ public class EventClientViewModel : ViewModelBase
                 $"Query {EventNames.EmailQuery} failed: [{errorMessage}]");
     }
 
+    public void QueryTimeQuery()
+    {
+        if (!CheckIfEventConnected(true)) return;
+
+        var response =
+            _eventClient!.Query<string, String>(EventNames.TimeQuery, "I need new time", out var errorMessage);
+        if (string.IsNullOrWhiteSpace(errorMessage) && response != null)
+            LogFactory.Instance.Log.Info($"Query {EventNames.TimeQuery}, result: {response}");
+        else
+            LogFactory.Instance.Log.Error(
+                $"Query {EventNames.TimeQuery} failed: [{errorMessage}]");
+    }
+
 
     private void ReceiveNewEmailCommand(NewEmailCommand command)
     {
         LogFactory.Instance.Log.Info($"Received {EventNames.SendEmailCommand} is [{command}]");
+    }
+
+    private void ReceiveUpdateTimeCommand(long command)
+    {
+        LogFactory.Instance.Log.Info($"Received {EventNames.UpdateTimeCommand} is [{command}]");
     }
 
     private void ReceiveEmailQuery(EmailQuery request)
@@ -116,6 +180,17 @@ public class EventClientViewModel : ViewModelBase
         LogFactory.Instance.Log.Info($"Received query request [{EventNames.EmailQuery}]: [{request}]");
         var response = new EmailQueryResponse { Emails = EmailManager.QueryEmail(request.Subject) };
         if (_eventClient!.Publish(EventNames.EmailQuery, response,
+                out var errorMessage))
+            LogFactory.Instance.Log.Info($"Response query result: {response}");
+        else
+            LogFactory.Instance.Log.Error($"Response query failed: {errorMessage}");
+    }
+
+    private void ReceiveTimeQuery(string request)
+    {
+        LogFactory.Instance.Log.Info($"Received query request [{EventNames.TimeQuery}]: [{request}]");
+        var response = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss fff");
+        if (_eventClient!.Publish(EventNames.TimeQuery, response,
                 out var errorMessage))
             LogFactory.Instance.Log.Info($"Response query result: {response}");
         else

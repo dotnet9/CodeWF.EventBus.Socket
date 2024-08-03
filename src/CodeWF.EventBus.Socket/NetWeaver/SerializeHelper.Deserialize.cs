@@ -26,8 +26,7 @@ public partial class SerializeHelper
         {
             using (var reader = new BinaryReader(stream))
             {
-                var data = Activator.CreateInstance(type);
-                DeserializeProperties(reader, data);
+                var data = DeserializeValue(reader, type);
                 return data;
             }
         }

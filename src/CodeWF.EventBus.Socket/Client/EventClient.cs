@@ -146,7 +146,7 @@ public class EventClient : IEventClient
             {
                 TaskId = SocketHelper.GetNewTaskId(),
                 Subject = subject,
-                Buffer = message.SerializeObject()
+                Buffer = message.SerializeObject(typeof(T))
             });
             return true;
         }
