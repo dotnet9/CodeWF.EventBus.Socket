@@ -24,6 +24,11 @@ public class EventClient : IEventClient
 
     public void Connect(string host, int port)
     {
+        ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(3));
+    }
+
+    public async Task<bool> ConnectAsync(string host, int port)
+    {
         _host = host;
         _port = port;
 
@@ -31,7 +36,7 @@ public class EventClient : IEventClient
         var ipEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
         ConnectStatus = ConnectStatus.IsConnecting;
 
-        Task.Factory.StartNew(async () =>
+        var task= Task.Factory.StartNew(async () =>
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
                 try
@@ -56,6 +61,8 @@ public class EventClient : IEventClient
                     // TODO Need to handle event services that are connected incorrectly (i.e. event services are not responding to its type correctly)
                 }
         }, _cancellationTokenSource.Token);
+        await task.Result;
+        return ConnectStatus.Connected == ConnectStatus;
     }
 
     private void Reconnect()

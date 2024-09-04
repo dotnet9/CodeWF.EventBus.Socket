@@ -49,7 +49,7 @@ public class EventClientViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _isSubscribeTimeQuery, value);
     }
 
-    public void ConnectServer()
+    public async void ConnectServer()
     {
         if (_eventClient?.ConnectStatus == ConnectStatus.Connected)
         {
@@ -59,7 +59,7 @@ public class EventClientViewModel : ViewModelBase
 
         _eventClient ??= new EventClient();
         var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-        _eventClient.Connect(addressArray[0], int.Parse(addressArray[1]));
+        await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
         LogFactory.Instance.Log.Info(
             "Connecting to event service, please retrieve the connection status through ConnectStatus later!");
     }
