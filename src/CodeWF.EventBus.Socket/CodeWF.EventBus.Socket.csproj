@@ -25,4 +25,7 @@
 		<None Include="..\..\README.MD" Pack="true" PackagePath="" />
 		<None Include="..\..\logo.png" Pack="true" PackagePath="" />
 	</ItemGroup>
+	<ItemGroup>
+	  <PackageReference Include="CodeWF.NetWeaver" Version="1.2.1" />
+	</ItemGroup>
 </Project>

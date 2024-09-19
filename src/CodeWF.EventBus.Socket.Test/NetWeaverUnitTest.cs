@@ -1,4 +1,4 @@
-﻿using CodeWF.EventBus.Socket.NetWeaver;
+﻿using CodeWF.NetWeaver;
 
 namespace CodeWF.EventBus.Socket.Test;
 
