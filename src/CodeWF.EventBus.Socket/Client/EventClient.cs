@@ -47,7 +47,7 @@ public class EventClient : IEventClient
                 }
                 catch (SocketException ex)
                 {
-                    Debug.Write(
+                    Debug.WriteLine(
                         $"TCP service connection exception, will reconnect in {ReconnectInterval / 1000} seconds：{ex.Message}");
                     await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval));
                 }
@@ -216,12 +216,12 @@ public class EventClient : IEventClient
                 }
                 catch (SocketException ex)
                 {
-                    Debug.Write($"Receive data exception：{ex.Message}");
+                    Debug.WriteLine($"Receive data exception：{ex.Message}");
                     break;
                 }
                 catch (Exception ex)
                 {
-                    Debug.Write($"Receive data exception：{ex.Message}");
+                    Debug.WriteLine($"Receive data exception：{ex.Message}");
                 }
 
             return Task.CompletedTask;
@@ -324,7 +324,7 @@ public class EventClient : IEventClient
             }
             catch (Exception ex)
             {
-                Debug.Write($"Send data exception：{ex.Message}");
+                Debug.WriteLine($"Send data exception：{ex.Message}");
             }
     }
 

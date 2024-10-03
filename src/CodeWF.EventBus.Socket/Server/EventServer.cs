@@ -34,7 +34,7 @@ public class EventServer : IEventServer
                 }
                 catch (Exception ex)
                 {
-                    Debug.Write($"Handle client connection online exception：{ex.Message}");
+                    Debug.WriteLine($"Handle client connection online exception：{ex.Message}");
                 }
         });
     }
@@ -70,13 +70,13 @@ public class EventServer : IEventServer
                         }
                         catch (Exception ex)
                         {
-                            Debug.Write($"Handle publish exception：{ex.Message}");
+                            Debug.WriteLine($"Handle publish exception：{ex.Message}");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.Write($"Handle publish exception：{ex.Message}");
+                    Debug.WriteLine($"Handle publish exception：{ex.Message}");
                 }
 
             await Task.CompletedTask;
@@ -114,13 +114,13 @@ public class EventServer : IEventServer
                         }
                         catch (Exception ex)
                         {
-                            Debug.Write($"Handle query exception：{ex.Message}");
+                            Debug.WriteLine($"Handle query exception：{ex.Message}");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.Write($"Handle query exception：{ex.Message}");
+                    Debug.WriteLine($"Handle query exception：{ex.Message}");
                 }
 
             await Task.CompletedTask;
@@ -157,7 +157,7 @@ public class EventServer : IEventServer
                     }
                     catch (Exception ex)
                     {
-                        Debug.Write($"Handle query response exception：{ex.Message}");
+                        Debug.WriteLine($"Handle query response exception：{ex.Message}");
                     }
                     finally
                     {
@@ -167,7 +167,7 @@ public class EventServer : IEventServer
                 }
                 catch (Exception ex)
                 {
-                    Debug.Write($"Handle query response exception：{ex.Message}");
+                    Debug.WriteLine($"Handle query response exception：{ex.Message}");
                 }
 
             await Task.CompletedTask;
@@ -199,13 +199,13 @@ public class EventServer : IEventServer
                 }
                 catch (SocketException ex)
                 {
-                    Debug.Write($"Remote host exception, the client will be removed：{ex.Message}");
+                    Debug.WriteLine($"Remote host exception, the client will be removed：{ex.Message}");
                     RemoveClient(tcpClient);
                     break;
                 }
                 catch (Exception ex)
                 {
-                    Debug.Write($"接收数据异常：{ex.Message}");
+                    Debug.WriteLine($"接收数据异常：{ex.Message}");
                 }
 
             await Task.CompletedTask;
@@ -230,7 +230,7 @@ public class EventServer : IEventServer
         }
         catch (Exception ex)
         {
-            Debug.Write($"Send command：{ex.Message}");
+            Debug.WriteLine($"Send command：{ex.Message}");
         }
     }
 
@@ -257,7 +257,7 @@ public class EventServer : IEventServer
         }
         catch (Exception ex)
         {
-            Debug.Write($"Send command：{ex.Message}");
+            Debug.WriteLine($"Send command：{ex.Message}");
         }
     }
 
@@ -275,7 +275,7 @@ public class EventServer : IEventServer
         }
         catch (Exception ex)
         {
-            Debug.Write($"Send command：{ex.Message}");
+            Debug.WriteLine($"Send command：{ex.Message}");
         }
     }
 
@@ -301,7 +301,7 @@ public class EventServer : IEventServer
         }
         catch (Exception ex)
         {
-            Debug.Write($"Send command：{ex.Message}");
+            Debug.WriteLine($"Send command：{ex.Message}");
         }
     }
 
@@ -315,7 +315,7 @@ public class EventServer : IEventServer
         }
         catch (Exception ex)
         {
-            Debug.Write($"Send command：{ex.Message}");
+            Debug.WriteLine($"Send command：{ex.Message}");
         }
     }
 
@@ -327,7 +327,7 @@ public class EventServer : IEventServer
         }
         catch (Exception ex)
         {
-            Debug.Write($"Send command：{ex.Message}");
+            Debug.WriteLine($"Send command：{ex.Message}");
         }
     }
 
@@ -369,7 +369,7 @@ public class EventServer : IEventServer
                 catch (Exception ex)
                 {
                     ConnectStatus = ConnectStatus.Disconnected;
-                    Debug.Write(
+                    Debug.WriteLine(
                         $"TCP service startup exception, will restart in {RestartInterval / 1000} seconds：{ex.Message}");
                     await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
                 }
