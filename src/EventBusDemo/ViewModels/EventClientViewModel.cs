@@ -1,11 +1,11 @@
-﻿using System;
-using CodeWF.EventBus.Socket;
-using CodeWF.LogViewer.Avalonia.Log4Net;
+﻿using CodeWF.EventBus.Socket;
 using EventBusDemo.Commands;
 using EventBusDemo.Models;
 using EventBusDemo.Queries;
 using EventBusDemo.Services;
 using ReactiveUI;
+using System;
+using CodeWF.LogViewer.Avalonia;
 
 namespace EventBusDemo.ViewModels;
 
@@ -49,18 +49,18 @@ public class EventClientViewModel : ViewModelBase
         set => this.RaiseAndSetIfChanged(ref _isSubscribeTimeQuery, value);
     }
 
-    public void ConnectServer()
+    public async void ConnectServer()
     {
         if (_eventClient?.ConnectStatus == ConnectStatus.Connected)
         {
-            LogFactory.Instance.Log.Info("The event service has been connected!");
+            Logger.Info("The event service has been connected!");
             return;
         }
 
         _eventClient ??= new EventClient();
         var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-        _eventClient.Connect(addressArray[0], int.Parse(addressArray[1]));
-        LogFactory.Instance.Log.Info(
+        await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
+        Logger.Info(
             "Connecting to event service, please retrieve the connection status through ConnectStatus later!");
     }
 
@@ -68,7 +68,7 @@ public class EventClientViewModel : ViewModelBase
     {
         _eventClient?.Disconnect();
         _eventClient = null;
-        LogFactory.Instance.Log.Warn("Disconnected from event service");
+        Logger.Warn("Disconnected from event service");
     }
 
     public void SubscribeOrUnsubscribeSendEmailCommand()
@@ -118,9 +118,9 @@ public class EventClientViewModel : ViewModelBase
         if (_eventClient!.Publish(EventNames.SendEmailCommand,
                 EmailManager.GenerateRandomNewEmailNotification(),
                 out var errorMessage))
-            LogFactory.Instance.Log.Info($"Publish {EventNames.SendEmailCommand}");
+            Logger.Info($"Publish {EventNames.SendEmailCommand}");
         else
-            LogFactory.Instance.Log.Error(
+            Logger.Error(
                 $"Publish {EventNames.SendEmailCommand} failed: [{errorMessage}]");
     }
 
@@ -131,9 +131,9 @@ public class EventClientViewModel : ViewModelBase
         if (_eventClient!.Publish(EventNames.UpdateTimeCommand,
                 DateTimeOffset.Now.ToUnixTimeSeconds(),
                 out var errorMessage))
-            LogFactory.Instance.Log.Info($"Publish {EventNames.UpdateTimeCommand}");
+            Logger.Info($"Publish {EventNames.UpdateTimeCommand}");
         else
-            LogFactory.Instance.Log.Error(
+            Logger.Error(
                 $"Publish {EventNames.UpdateTimeCommand} failed: [{errorMessage}]");
     }
 
@@ -145,9 +145,9 @@ public class EventClientViewModel : ViewModelBase
             new EmailQuery { Subject = "Account" },
             out var errorMessage);
         if (string.IsNullOrWhiteSpace(errorMessage) && response != null)
-            LogFactory.Instance.Log.Info($"Query {EventNames.EmailQuery}, result: {response}");
+            Logger.Info($"Query {EventNames.EmailQuery}, result: {response}");
         else
-            LogFactory.Instance.Log.Error(
+            Logger.Error(
                 $"Query {EventNames.EmailQuery} failed: [{errorMessage}]");
     }
 
@@ -158,49 +158,49 @@ public class EventClientViewModel : ViewModelBase
         var response =
             _eventClient!.Query<string, String>(EventNames.TimeQuery, "I need new time", out var errorMessage);
         if (string.IsNullOrWhiteSpace(errorMessage) && response != null)
-            LogFactory.Instance.Log.Info($"Query {EventNames.TimeQuery}, result: {response}");
+            Logger.Info($"Query {EventNames.TimeQuery}, result: {response}");
         else
-            LogFactory.Instance.Log.Error(
+            Logger.Error(
                 $"Query {EventNames.TimeQuery} failed: [{errorMessage}]");
     }
 
 
     private void ReceiveNewEmailCommand(NewEmailCommand command)
     {
-        LogFactory.Instance.Log.Info($"Received {EventNames.SendEmailCommand} is [{command}]");
+        Logger.Info($"Received {EventNames.SendEmailCommand} is [{command}]");
     }
 
     private void ReceiveUpdateTimeCommand(long command)
     {
-        LogFactory.Instance.Log.Info($"Received {EventNames.UpdateTimeCommand} is [{command}]");
+        Logger.Info($"Received {EventNames.UpdateTimeCommand} is [{command}]");
     }
 
     private void ReceiveEmailQuery(EmailQuery request)
     {
-        LogFactory.Instance.Log.Info($"Received query request [{EventNames.EmailQuery}]: [{request}]");
+        Logger.Info($"Received query request [{EventNames.EmailQuery}]: [{request}]");
         var response = new EmailQueryResponse { Emails = EmailManager.QueryEmail(request.Subject) };
         if (_eventClient!.Publish(EventNames.EmailQuery, response,
                 out var errorMessage))
-            LogFactory.Instance.Log.Info($"Response query result: {response}");
+            Logger.Info($"Response query result: {response}");
         else
-            LogFactory.Instance.Log.Error($"Response query failed: {errorMessage}");
+            Logger.Error($"Response query failed: {errorMessage}");
     }
 
     private void ReceiveTimeQuery(string request)
     {
-        LogFactory.Instance.Log.Info($"Received query request [{EventNames.TimeQuery}]: [{request}]");
+        Logger.Info($"Received query request [{EventNames.TimeQuery}]: [{request}]");
         var response = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss fff");
         if (_eventClient!.Publish(EventNames.TimeQuery, response,
                 out var errorMessage))
-            LogFactory.Instance.Log.Info($"Response query result: {response}");
+            Logger.Info($"Response query result: {response}");
         else
-            LogFactory.Instance.Log.Error($"Response query failed: {errorMessage}");
+            Logger.Error($"Response query failed: {errorMessage}");
     }
 
     private bool CheckIfEventConnected(bool showMsg = false)
     {
         if (_eventClient is { ConnectStatus: ConnectStatus.Connected }) return true;
-        if (showMsg) LogFactory.Instance.Log.Warn("Please connect to the event service before sending the event");
+        if (showMsg) Logger.Warn("Please connect to the event service before sending the event");
 
         return false;
     }

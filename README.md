@@ -115,11 +115,11 @@ private void ReceiveEmailQuery(EmailQuery query)
     // Publish the query result using the same topic
     if (_eventClient!.Publish("event.email.query", response, out var errorMessage))
     {
-        LogFactory.Instance.Log.Info($"Response query result: {response}");
+        Logger.Info($"Response query result: {response}");
     }
     else
     {
-        LogFactory.Instance.Log.Error($"Response query failed: {errorMessage}");
+        Logger.Error($"Response query failed: {errorMessage}");
     }
 }
 ```
@@ -132,11 +132,11 @@ var response = _eventClient!.Query<EmailQuery, EmailQueryResponse>("event.email.
     out var errorMessage);
 if (string.IsNullOrWhiteSpace(errorMessage) && response != null)
 {
-    LogFactory.Instance.Log.Info($"Query event.email.query, result: {response}");
+    Logger.Info($"Query event.email.query, result: {response}");
 }
 else
 {
-    LogFactory.Instance.Log.Error(
+    Logger.Error(
         $"Query event.email.query failed: [{errorMessage}]");
 }
 ```
