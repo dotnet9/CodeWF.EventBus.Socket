@@ -376,6 +376,41 @@ public class EventServer : IEventServer
         }, _cancellationTokenSource.Token);
     }
 
+    public Task StartAsync(string? host, int port, CancellationTokenSource cancellationToken = null)
+    {
+        ConnectStatus = ConnectStatus.IsConnecting;
+        _cancellationTokenSource = cancellationToken == null ? cancellationToken : new CancellationTokenSource();
+        var ipEndPort = string.IsNullOrWhiteSpace(host)
+            ? new IPEndPoint(IPAddress.Any, port)
+            : new IPEndPoint(IPAddress.Parse(host), port);
+
+        return Task.Factory.StartNew(async () =>
+        {
+            while (!_cancellationTokenSource.IsCancellationRequested)
+                try
+                {
+                    _server = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream,
+                        ProtocolType.Tcp);
+                    _server.Bind(ipEndPort);
+                    _server.Listen(10);
+
+                    ListenForClients();
+                    ListenPublish();
+                    ListenQuery();
+                    ListenResponseQuery();
+                    ConnectStatus = ConnectStatus.Connected;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    ConnectStatus = ConnectStatus.Disconnected;
+                    Debug.WriteLine(
+                        $"TCP service startup exception, will restart in {RestartInterval / 1000} seconds：{ex.Message}");
+                    await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
+                }
+        }, _cancellationTokenSource.Token);
+    }
+
     public void Stop()
     {
         try
