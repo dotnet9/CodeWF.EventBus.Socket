@@ -1,5 +1,4 @@
 using Avalonia;
-using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 using DryIoc;
 using EventBusDemo.Models;
@@ -7,7 +6,6 @@ using EventBusDemo.Services;
 using EventBusDemo.Views;
 using Prism.DryIoc;
 using Prism.Ioc;
-using Prism.Regions;
 using System;
 using System.Linq;
 
@@ -19,12 +17,6 @@ public class App : PrismApplication
     {
         AvaloniaXamlLoader.Load(this);
         base.Initialize(); // <-- Required
-    }
-
-    protected override void ConfigureRegionAdapterMappings(RegionAdapterMappings regionAdapterMappings)
-    {
-        regionAdapterMappings.RegisterMapping<ItemsControl, ItemsControlRegionAdapter>();
-        regionAdapterMappings.RegisterMapping<ContentControl, ContentControlRegionAdapter>();
     }
 
     protected override AvaloniaObject CreateShell()
