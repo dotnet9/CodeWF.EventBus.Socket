@@ -376,10 +376,10 @@ public class EventServer : IEventServer
         }, _cancellationTokenSource.Token);
     }
 
-    public Task StartAsync(string? host, int port, CancellationTokenSource cancellationToken = null)
+    public Task StartAsync(string? host, int port, CancellationTokenSource? cancellationToken = null)
     {
         ConnectStatus = ConnectStatus.IsConnecting;
-        _cancellationTokenSource = cancellationToken == null ? cancellationToken : new CancellationTokenSource();
+        _cancellationTokenSource = cancellationToken ?? new CancellationTokenSource();
         var ipEndPort = string.IsNullOrWhiteSpace(host)
             ? new IPEndPoint(IPAddress.Any, port)
             : new IPEndPoint(IPAddress.Parse(host), port);
