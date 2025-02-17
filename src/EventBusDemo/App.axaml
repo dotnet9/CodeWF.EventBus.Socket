@@ -1,12 +1,13 @@
 <prism:PrismApplication xmlns="https://github.com/avaloniaui"
                         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                         xmlns:prism="http://prismlibrary.com/"
+                        xmlns:semi="https://irihi.tech/semi"
                         xmlns:u-semi="https://irihi.tech/ursa/themes/semi"
                         x:Class="EventBusDemo.App">
     <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <prism:PrismApplication.Styles>
-        <StyleInclude Source="avares://Semi.Avalonia/Themes/Index.axaml" />
+        <semi:SemiTheme Locale="zh-CN" />
         <u-semi:SemiTheme Locale="zh-CN" />
     </prism:PrismApplication.Styles>
     <prism:PrismApplication.Resources>
