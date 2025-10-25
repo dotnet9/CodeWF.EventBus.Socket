@@ -1,5 +1,10 @@
 # CodeWF.EventBus.Socket
+
 English | [简体中文](README-zh_CN.md)
+
+[![NuGet](https://img.shields.io/nuget/v/CodeWF.EventBus.Socket.svg)](https://www.nuget.org/packages/CodeWF.EventBus.Socket/)
+[![NuGet](https://img.shields.io/nuget/dt/CodeWF.EventBus.Socket.svg)](https://www.nuget.org/packages/CodeWF.EventBus.Socket/)
+[![License](https://img.shields.io/github/license/dotnet9/CodeWF.EventBus.Socket)](LICENSE)
 
 **Distributed Event Bus Implemented with Sockets, Supporting CQRS, and Independent of Third-Party MQ.**
 
@@ -111,7 +116,7 @@ private void ReceiveEmailQuery(EmailQuery query)
 {
     // Execute the query request and prepare the query result
     var response = new EmailQueryResponse { Emails = EmailManager.QueryEmail(query.Subject) };
-    
+
     // Publish the query result using the same topic
     if (_eventClient!.Publish("event.email.query", response, out var errorMessage))
     {
