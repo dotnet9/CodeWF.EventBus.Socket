@@ -1,7 +1,7 @@
 ﻿using CodeWF.EventBus.Socket;
+using CodeWF.Log.Core;
 using EventBusDemo.Services;
 using System;
-using CodeWF.LogViewer.Avalonia;
 
 namespace EventBusDemo.ViewModels;
 

@@ -1,11 +1,11 @@
 ﻿using CodeWF.EventBus.Socket;
+using CodeWF.Log.Core;
 using EventBusDemo.Commands;
 using EventBusDemo.Models;
 using EventBusDemo.Queries;
 using EventBusDemo.Services;
 using ReactiveUI;
 using System;
-using CodeWF.LogViewer.Avalonia;
 
 namespace EventBusDemo.ViewModels;
 
