@@ -1,4 +1,4 @@
-﻿using CodeWF.EventBus.Socket;
+using CodeWF.EventBus.Socket;
 using CodeWF.Log.Core;
 using EventBusDemo.Commands;
 using EventBusDemo.Models;
@@ -6,18 +6,13 @@ using EventBusDemo.Queries;
 using EventBusDemo.Services;
 using ReactiveUI;
 using System;
+using System.Threading.Tasks;
 
 namespace EventBusDemo.ViewModels;
 
 public class EventClientViewModel : ViewModelBase
 {
     private IEventClient? _eventClient;
-
-
-    private bool _isSubscribeSendEmailCommand;
-    private bool _isSubscribeUpdateTimeCommand;
-    private bool _isSubscribeEmailQuery;
-    private bool _isSubscribeTimeQuery;
 
     public EventClientViewModel(ApplicationConfig config)
     {
@@ -27,29 +22,29 @@ public class EventClientViewModel : ViewModelBase
 
     public bool IsSubscribeSendEmailCommand
     {
-        get => _isSubscribeSendEmailCommand;
-        set => this.RaiseAndSetIfChanged(ref _isSubscribeSendEmailCommand, value);
+        get ;
+        set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     public bool IsSubscribeUpdateTimeCommand
     {
-        get => _isSubscribeUpdateTimeCommand;
-        set => this.RaiseAndSetIfChanged(ref _isSubscribeUpdateTimeCommand, value);
+        get ;
+        set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     public bool IsSubscribeEmailQuery
     {
-        get => _isSubscribeEmailQuery;
-        set => this.RaiseAndSetIfChanged(ref _isSubscribeEmailQuery, value);
+        get ;
+        set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     public bool IsSubscribeTimeQuery
     {
-        get => _isSubscribeTimeQuery;
-        set => this.RaiseAndSetIfChanged(ref _isSubscribeTimeQuery, value);
+        get ;
+        set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    public async void ConnectServer()
+    public async Task ConnectServerAsync()
     {
         if (_eventClient?.ConnectStatus == ConnectStatus.Connected)
         {
@@ -64,14 +59,14 @@ public class EventClientViewModel : ViewModelBase
             "Connecting to event service, please retrieve the connection status through ConnectStatus later!");
     }
 
-    public void Disconnect()
+    public async Task DisconnectAsync()
     {
         _eventClient?.Disconnect();
         _eventClient = null;
         Logger.Warn("Disconnected from event service");
     }
 
-    public void SubscribeOrUnsubscribeSendEmailCommand()
+    public async Task SubscribeOrUnsubscribeSendEmailCommand()
     {
         if (!CheckIfEventConnected(true)) return;
 
@@ -81,7 +76,7 @@ public class EventClientViewModel : ViewModelBase
             _eventClient?.Subscribe<NewEmailCommand>(EventNames.SendEmailCommand, ReceiveNewEmailCommand);
     }
 
-    public void SubscribeOrUnsubscribeUpdateTimeCommand()
+    public async Task SubscribeOrUnsubscribeUpdateTimeCommand()
     {
         if (!CheckIfEventConnected(true)) return;
 
@@ -91,7 +86,7 @@ public class EventClientViewModel : ViewModelBase
             _eventClient?.Subscribe<long>(EventNames.UpdateTimeCommand, ReceiveUpdateTimeCommand);
     }
 
-    public void SubscribeOrUnsubscribeEmailQuery()
+    public async Task SubscribeOrUnsubscribeEmailQuery()
     {
         if (!CheckIfEventConnected(true)) return;
 
@@ -101,7 +96,7 @@ public class EventClientViewModel : ViewModelBase
             _eventClient?.Subscribe<EmailQuery>(EventNames.EmailQuery, ReceiveEmailQuery);
     }
 
-    public void SubscribeOrUnsubscribeTimeQuery()
+    public async Task SubscribeOrUnsubscribeTimeQuery()
     {
         if (!CheckIfEventConnected(true)) return;
 
@@ -111,7 +106,7 @@ public class EventClientViewModel : ViewModelBase
             _eventClient?.Subscribe<string>(EventNames.TimeQuery, ReceiveTimeQuery);
     }
 
-    public void PublishNewEmailCommand()
+    public async Task PublishNewEmailCommand()
     {
         if (!CheckIfEventConnected(true)) return;
 
@@ -124,7 +119,7 @@ public class EventClientViewModel : ViewModelBase
                 $"Publish {EventNames.SendEmailCommand} failed: [{errorMessage}]");
     }
 
-    public void PublishUpdateTimeCommand()
+    public async Task PublishUpdateTimeCommand()
     {
         if (!CheckIfEventConnected(true)) return;
 
@@ -137,31 +132,46 @@ public class EventClientViewModel : ViewModelBase
                 $"Publish {EventNames.UpdateTimeCommand} failed: [{errorMessage}]");
     }
 
-    public void QueryEmailQuery()
+    public async Task QueryEmailQuery()
     {
         if (!CheckIfEventConnected(true)) return;
 
-        var response = _eventClient!.Query<EmailQuery, EmailQueryResponse>(EventNames.EmailQuery,
-            new EmailQuery { Subject = "Account" },
-            out var errorMessage);
-        if (string.IsNullOrWhiteSpace(errorMessage) && response != null)
-            Logger.Info($"Query {EventNames.EmailQuery}, result: {response}");
-        else
+        try
+        {
+            var result = await _eventClient!.QueryAsync<EmailQuery, EmailQueryResponse>(EventNames.EmailQuery,
+                new EmailQuery { Subject = "Account" }, 3000);
+            if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
+                Logger.Info($"Query {EventNames.EmailQuery}, result: {result.Result}");
+            else
+                Logger.Error(
+                    $"Query {EventNames.EmailQuery} failed: [{result.ErrorMessage}]");
+        }
+        catch (Exception ex)
+        {
             Logger.Error(
-                $"Query {EventNames.EmailQuery} failed: [{errorMessage}]");
+                $"Query {EventNames.EmailQuery} failed: [{ex.Message}]");
+        }
     }
 
-    public void QueryTimeQuery()
+    public async Task QueryTimeQuery()
     {
         if (!CheckIfEventConnected(true)) return;
 
-        var response =
-            _eventClient!.Query<string, String>(EventNames.TimeQuery, "I need new time", out var errorMessage);
-        if (string.IsNullOrWhiteSpace(errorMessage) && response != null)
-            Logger.Info($"Query {EventNames.TimeQuery}, result: {response}");
-        else
+        try
+        {
+            var result =
+                await _eventClient!.QueryAsync<string, string>(EventNames.TimeQuery, "I need new time", 3000);
+            if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
+                Logger.Info($"Query {EventNames.TimeQuery}, result: {result.Result}");
+            else
+                Logger.Error(
+                    $"Query {EventNames.TimeQuery} failed: [{result.ErrorMessage}]");
+        }
+        catch (Exception ex)
+        {
             Logger.Error(
-                $"Query {EventNames.TimeQuery} failed: [{errorMessage}]");
+                $"Query {EventNames.TimeQuery} failed: [{ex.Message}]");
+        }
     }
 
 

@@ -2,6 +2,7 @@
 using CodeWF.Log.Core;
 using EventBusDemo.Services;
 using System;
+using System.Threading.Tasks;
 
 namespace EventBusDemo.ViewModels;
 
@@ -15,7 +16,7 @@ public class EventServerViewModel : ViewModelBase
         Title = "EventBus Server";
     }
 
-    public void RunServer()
+    public async Task RunServer()
     {
         if (_eventServer?.ConnectStatus == ConnectStatus.Connected)
         {
@@ -25,11 +26,11 @@ public class EventServerViewModel : ViewModelBase
 
         _eventServer ??= new EventServer();
         var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-        _eventServer.Start(addressArray[0], int.Parse(addressArray[1]));
+        await _eventServer.StartAsync(addressArray[0], int.Parse(addressArray[1]));
         Logger.Info("The event service has been activated");
     }
 
-    public void Stop()
+    public async Task Stop()
     {
         _eventServer?.Stop();
         _eventServer = null;

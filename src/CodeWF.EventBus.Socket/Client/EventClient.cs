@@ -181,33 +181,43 @@ public class EventClient : IEventClient
             _queryTaskIdAndResponse[request.TaskId] = default;
             SendCommand(request);
 
-            var timeoutTask = Task.Delay(overtimeMilliseconds);
-            var completionTask = new TaskCompletionSource<bool>();
-
-            // 使用异步方式等待响应，避免线程阻塞
-            var checkTask = Task.Run(async () =>
+            // 使用TaskCompletionSource实现异步等待响应
+            var tcs = new TaskCompletionSource<UpdateEvent>();
+            
+            // 创建一个定时器用于超时处理
+            using var timeoutTimer = new Timer(_ =>
             {
-                while (_cancellationTokenSource is { IsCancellationRequested: false }
-                       && _queryTaskIdAndResponse.TryGetValue(taskId, out var updateEvent)
-                       && updateEvent == default)
+                tcs.TrySetException(new Exception("Query timeout, please try again!"));
+            }, null, overtimeMilliseconds, Timeout.Infinite);
+
+            // 循环检查是否有响应，使用异步等待避免线程阻塞
+            while (_cancellationTokenSource is { IsCancellationRequested: false })
+            {
+                // 检查是否有响应
+                if (_queryTaskIdAndResponse.TryGetValue(taskId, out var responseEvent) && responseEvent != default)
                 {
-                    await Task.Delay(10); // 异步等待10毫秒
+                    // 取消定时器
+                    timeoutTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                    tcs.TrySetResult(responseEvent);
+                    break;
                 }
-                completionTask.SetResult(true);
-            });
-
-            // 等待完成或超时
-            var completedTask = await Task.WhenAny(checkTask, timeoutTask);
-            if (completedTask == timeoutTask)
-            {
-                throw new Exception("Query timeout, please try again!");
+                
+                // 异步等待10毫秒
+                await Task.Delay(10, _cancellationTokenSource.Token);
             }
 
-            if (_queryTaskIdAndResponse.TryGetValue(taskId, out var value)
-                && value != null)
-                return ((TResponse)value.Buffer!.DeserializeObject(typeof(TResponse)), string.Empty);
+            // 等待完成
+            var updateEvent = await tcs.Task;
+            if (updateEvent != null && updateEvent.Buffer != null)
+            {
+                return ((TResponse)updateEvent.Buffer.DeserializeObject(typeof(TResponse)), string.Empty);
+            }
 
-            return (default, string.Empty);
+            return (default, "No response received from server");
+        }
+        catch (OperationCanceledException)
+        {
+            return (default, "Operation canceled");
         }
         catch (Exception ex)
         {
@@ -221,12 +231,24 @@ public class EventClient : IEventClient
         }
     }
 
-    // 保留同步版本，但内部使用异步实现
+    // 保留同步版本，但内部使用异步实现，避免死锁
     public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage, int overtimeMilliseconds = 3000)
     {
-        var result = QueryAsync<TQuery, TResponse>(subject, message, overtimeMilliseconds).GetAwaiter().GetResult();
-        errorMessage = result.ErrorMessage;
-        return result.Result;
+        try
+        {
+            // 使用ConfigureAwait(false)避免死锁
+            var result = QueryAsync<TQuery, TResponse>(subject, message, overtimeMilliseconds)
+                .ConfigureAwait(false)
+                .GetAwaiter()
+                .GetResult();
+            errorMessage = result.ErrorMessage;
+            return result.Result;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+            return default;
+        }
     }
 
     #endregion

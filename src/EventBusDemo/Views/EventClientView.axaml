@@ -31,10 +31,10 @@
                 <Run Text="Event service host：" />
                 <Run Text="{Binding Address}" />
             </TextBlock>
-            <Button Content="Connect" Command="{Binding ConnectServer}"
+            <Button Content="Connect" Command="{Binding ConnectServerAsync}"
                     Classes="Success" Theme="{DynamicResource SolidButton}"
                     Margin="20 0" />
-            <Button Content="Disconnect" Command="{Binding Disconnect}"
+            <Button Content="Disconnect" Command="{Binding DisconnectAsync}"
                     Classes="Danger" Theme="{DynamicResource SolidButton}" />
         </StackPanel>
         <HeaderedContentControl Header="Subscribe | Unsubscribe" Grid.Row="1" Grid.Column="0"
