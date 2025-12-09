@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "管理入口": {
+      "commandName": "Project",
+      "commandLineArgs": ""
+    },
+    "Client": {
+      "commandName": "Project",
+      "commandLineArgs": "-type client -address \"127.0.0.1:5329\""
+    }
+  }
+}

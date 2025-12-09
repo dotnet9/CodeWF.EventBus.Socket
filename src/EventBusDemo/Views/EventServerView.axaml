@@ -21,15 +21,44 @@
         </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto *">
-        <StackPanel Orientation="Horizontal">
-            <TextBlock VerticalAlignment="Center">
-                <Run Text="事件服务地址：" />
-                <Run Text="{Binding Address}" />
-            </TextBlock>
-            <Button Content="运行" Command="{Binding RunServer}"
-                    Classes="Success" Theme="{DynamicResource SolidButton}" Margin="20 0" />
-            <Button Content="停止" Command="{Binding Stop}"
-                    Classes="Danger" Theme="{DynamicResource SolidButton}" />
+        <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center" Margin="10">
+            <TextBlock Text="事件服务地址：" VerticalAlignment="Center" Width="100" />
+            <TextBox 
+                Text="{Binding Address}" 
+                Width="200" 
+                TextWrapping="Wrap" 
+                HorizontalAlignment="Stretch" 
+                VerticalAlignment="Center"/>
+            <Button 
+                Content="运行" 
+                Command="{Binding RunServerAsync}" 
+                Width="80" 
+                VerticalAlignment="Center" 
+                IsEnabled="{Binding CanStartServer}" 
+                Classes="Success" 
+                Theme="{DynamicResource SolidButton}"/>
+            <Button 
+                Content="停止" 
+                Command="{Binding Stop}" 
+                Width="80" 
+                VerticalAlignment="Center" 
+                IsEnabled="{Binding CanStopServer}" 
+                Classes="Danger" 
+                Theme="{DynamicResource SolidButton}"/>
+            <StackPanel Orientation="Horizontal" Spacing="5" VerticalAlignment="Center">
+                <Ellipse 
+                    Width="10" 
+                    Height="10" 
+                    Fill="{Binding ServerStatusColor}" 
+                    Stroke="Transparent" 
+                    StrokeThickness="1" 
+                    VerticalAlignment="Center"/>
+                <TextBlock 
+                    Text="{Binding ServerStatusText}" 
+                    VerticalAlignment="Center" 
+                    Foreground="{Binding ServerStatusColor}" 
+                    FontWeight="Medium"/>
+            </StackPanel>
         </StackPanel>
         <Border Grid.Row="1" Classes="Hover" Theme="{StaticResource CardBorder}" Padding="5">
             <log:LogView />

@@ -4,8 +4,10 @@ using EventBusDemo.Commands;
 using EventBusDemo.Models;
 using EventBusDemo.Queries;
 using EventBusDemo.Services;
+using Prism.Commands;
 using ReactiveUI;
 using System;
+
 using System.Threading.Tasks;
 
 namespace EventBusDemo.ViewModels;
@@ -13,6 +15,8 @@ namespace EventBusDemo.ViewModels;
 public class EventClientViewModel : ViewModelBase
 {
     private IEventClient? _eventClient;
+    private ConnectStatus _connectStatus = ConnectStatus.Disconnected;
+    private bool _isConnecting;
 
     public EventClientViewModel(ApplicationConfig config)
     {
@@ -20,29 +24,86 @@ public class EventClientViewModel : ViewModelBase
         Title = "EventBus客户端";
     }
 
+    public ConnectStatus ConnectStatus
+    {
+        get => _connectStatus;
+        set => this.RaiseAndSetIfChanged(ref _connectStatus, value);
+    }
+
+    public bool IsConnecting
+    {
+        get => _isConnecting;
+        set
+        {
+            this.RaiseAndSetIfChanged(ref _isConnecting, value);
+            this.RaisePropertyChanged(nameof(CanConnect));
+            this.RaisePropertyChanged(nameof(CanDisconnect));
+        }
+    }
+
+    public bool CanConnect
+    {
+        get => !IsConnecting;
+    }
+
+    public bool CanDisconnect
+    {
+        get => !IsConnecting;
+    }
+
+    public string ConnectStatusText
+    {
+        get
+        {
+            return _connectStatus switch
+            {
+                ConnectStatus.Connected => "已连接",
+                ConnectStatus.IsConnecting => "连接中",
+                _ => "未连接"
+            };
+        }
+    }
+
+    public string ConnectStatusColor
+    {
+        get
+        {
+            return _connectStatus switch
+            {
+                ConnectStatus.Connected => "Green",
+                ConnectStatus.IsConnecting => "Yellow",
+                _ => "Red"
+            };
+        }
+    }
+
+
+
     public bool IsSubscribeSendEmailCommand
     {
-        get ;
+        get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     public bool IsSubscribeUpdateTimeCommand
     {
-        get ;
+        get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     public bool IsSubscribeEmailQuery
     {
-        get ;
+        get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
     public bool IsSubscribeTimeQuery
     {
-        get ;
+        get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
+
+
 
     public async Task ConnectServerAsync()
     {
@@ -52,18 +113,61 @@ public class EventClientViewModel : ViewModelBase
             return;
         }
 
+        IsConnecting = true;
+        ConnectStatus = ConnectStatus.IsConnecting;
+        this.RaisePropertyChanged(nameof(ConnectStatusText));
+        this.RaisePropertyChanged(nameof(ConnectStatusColor));
+
         _eventClient ??= new EventClient();
-        var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-        await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
-        Logger.Info(
-            "正在连接事件服务，请稍后通过ConnectStatus获取连接状态！");
+        try
+        {
+            var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
+            await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
+            ConnectStatus = ConnectStatus.Connected;
+            Logger.Info("事件服务已连接！");
+        }
+        catch (Exception ex)
+        {
+            ConnectStatus = ConnectStatus.Disconnected;
+            Logger.Error($"连接事件服务失败：{ex.Message}");
+        }
+        finally
+        {
+            IsConnecting = false;
+            this.RaisePropertyChanged(nameof(ConnectStatusText));
+            this.RaisePropertyChanged(nameof(ConnectStatusColor));
+        }
     }
 
     public async Task DisconnectAsync()
     {
-        _eventClient?.Disconnect();
-        _eventClient = null;
-        Logger.Warn("已断开与事件服务的连接");
+        if (_eventClient == null)
+        {
+            ConnectStatus = ConnectStatus.Disconnected;
+            this.RaisePropertyChanged(nameof(ConnectStatusText));
+            this.RaisePropertyChanged(nameof(ConnectStatusColor));
+            return;
+        }
+
+        this.RaisePropertyChanged(nameof(ConnectStatusText));
+        this.RaisePropertyChanged(nameof(ConnectStatusColor));
+
+        try
+        {
+            _eventClient.Disconnect();
+            _eventClient = null;
+            ConnectStatus = ConnectStatus.Disconnected;
+            Logger.Warn("已断开与事件服务的连接");
+        }
+        catch (Exception ex)
+        {
+            Logger.Error($"断开连接失败：{ex.Message}");
+        }
+        finally
+        {
+            this.RaisePropertyChanged(nameof(ConnectStatusText));
+            this.RaisePropertyChanged(nameof(ConnectStatusColor));
+        }
     }
 
     public async Task SubscribeOrUnsubscribeSendEmailCommand()
@@ -110,26 +214,36 @@ public class EventClientViewModel : ViewModelBase
     {
         if (!CheckIfEventConnected(true)) return;
 
+        var emailCommand = EmailManager.GenerateRandomNewEmailNotification();
         if (_eventClient!.Publish(EventNames.SendEmailCommand,
-                EmailManager.GenerateRandomNewEmailNotification(),
+                emailCommand,
                 out var errorMessage))
-            Logger.Info($"发布 {EventNames.SendEmailCommand}");
+        {
+            Logger.Info($"发布 {EventNames.SendEmailCommand}: {emailCommand}");
+        }
         else
+        {
             Logger.Error(
                 $"发布 {EventNames.SendEmailCommand} 失败: [{errorMessage}]");
+        }
     }
 
     public async Task PublishUpdateTimeCommand()
     {
         if (!CheckIfEventConnected(true)) return;
 
+        var timestamp = DateTimeOffset.Now.ToUnixTimeSeconds();
         if (_eventClient!.Publish(EventNames.UpdateTimeCommand,
-                DateTimeOffset.Now.ToUnixTimeSeconds(),
+                timestamp,
                 out var errorMessage))
-            Logger.Info($"发布 {EventNames.UpdateTimeCommand}");
+        {
+            Logger.Info($"发布 {EventNames.UpdateTimeCommand}: {timestamp}");
+        }
         else
+        {
             Logger.Error(
                 $"发布 {EventNames.UpdateTimeCommand} 失败: [{errorMessage}]");
+        }
     }
 
     public async Task QueryEmailQuery()
@@ -138,13 +252,18 @@ public class EventClientViewModel : ViewModelBase
 
         try
         {
+            var query = new EmailQuery { Subject = "账户" };
             var result = await _eventClient!.QueryAsync<EmailQuery, EmailQueryResponse>(EventNames.EmailQuery,
-                new EmailQuery { Subject = "账户" }, 3000);
+                query, 3000);
             if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
-                Logger.Info($"查询 {EventNames.EmailQuery}, 结果: {result.Result}");
+            {
+                Logger.Info($"查询 {EventNames.EmailQuery} 结果: {result.Result}");
+            }
             else
+            {
                 Logger.Error(
                     $"查询 {EventNames.EmailQuery} 失败: [{result.ErrorMessage}]");
+            }
         }
         catch (Exception ex)
         {
@@ -159,13 +278,17 @@ public class EventClientViewModel : ViewModelBase
 
         try
         {
-            var result =
-                await _eventClient!.QueryAsync<string, string>(EventNames.TimeQuery, "我需要新时间", 3000);
+            var query = "我需要新时间";
+            var result = await _eventClient!.QueryAsync<string, string>(EventNames.TimeQuery, query, 3000);
             if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
-                Logger.Info($"查询 {EventNames.TimeQuery}, 结果: {result.Result}");
+            {
+                Logger.Info($"查询 {EventNames.TimeQuery} 结果: {result.Result}");
+            }
             else
+            {
                 Logger.Error(
                     $"查询 {EventNames.TimeQuery} 失败: [{result.ErrorMessage}]");
+            }
         }
         catch (Exception ex)
         {
@@ -177,34 +300,42 @@ public class EventClientViewModel : ViewModelBase
 
     private void ReceiveNewEmailCommand(NewEmailCommand command)
     {
-        Logger.Info($"收到 {EventNames.SendEmailCommand} 是 [{command}]");
+        Logger.Info($"收到 {EventNames.SendEmailCommand}: {command}");
     }
 
     private void ReceiveUpdateTimeCommand(long command)
     {
-        Logger.Info($"收到 {EventNames.UpdateTimeCommand} 是 [{command}]");
+        Logger.Info($"收到 {EventNames.UpdateTimeCommand}: {command}");
     }
 
     private void ReceiveEmailQuery(EmailQuery request)
     {
-        Logger.Info($"收到查询请求 [{EventNames.EmailQuery}]: [{request}]");
+        Logger.Info($"收到查询请求 [{EventNames.EmailQuery}]: {request}");
         var response = new EmailQueryResponse { Emails = EmailManager.QueryEmail(request.Subject) };
         if (_eventClient!.Publish(EventNames.EmailQuery, response,
                 out var errorMessage))
-            Logger.Info($"响应查询结果: {response}");
+        {
+            Logger.Info($"响应查询结果 [{EventNames.EmailQuery}]: {response}");
+        }
         else
-            Logger.Error($"响应查询失败: {errorMessage}");
+        {
+            Logger.Error($"响应查询失败 [{EventNames.EmailQuery}]: {errorMessage}");
+        }
     }
 
     private void ReceiveTimeQuery(string request)
     {
-        Logger.Info($"收到查询请求 [{EventNames.TimeQuery}]: [{request}]");
+        Logger.Info($"收到查询请求 [{EventNames.TimeQuery}]: {request}");
         var response = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss fff");
         if (_eventClient!.Publish(EventNames.TimeQuery, response,
                 out var errorMessage))
-            Logger.Info($"响应查询结果: {response}");
+        {
+            Logger.Info($"响应查询结果 [{EventNames.TimeQuery}]: {response}");
+        }
         else
-            Logger.Error($"响应查询失败: {errorMessage}");
+        {
+            Logger.Error($"响应查询失败 [{EventNames.TimeQuery}]: {errorMessage}");
+        }
     }
 
     private bool CheckIfEventConnected(bool showMsg = false)

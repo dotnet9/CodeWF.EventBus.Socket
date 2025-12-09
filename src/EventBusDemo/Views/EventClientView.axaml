@@ -13,86 +13,53 @@
         x:DataType="vm:EventClientViewModel"
         Icon="/Assets/avalonia-logo.ico"
         Title="{Binding Title}">
-    <Window.Styles>
-        <Style Selector="CheckBox">
-            <Setter Property="Margin" Value="5" />
-        </Style>
-    </Window.Styles>
-    <Grid RowDefinitions="Auto Auto *" ColumnDefinitions="* *">
-        <StackPanel Orientation="Horizontal" Grid.ColumnSpan="2" Margin="0 0 0 10">
-            <StackPanel.Styles>
-                <Style Selector="Button">
-                    <Setter Property="Width" Value="100" />
-                    <Setter Property="Height" Value="35" />
-                    <Setter Property="HorizontalAlignment" Value="Right" />
-                </Style>
-            </StackPanel.Styles>
-            <TextBlock VerticalAlignment="Center">
-                <Run Text="事件服务主机：" />
-                <Run Text="{Binding Address}" />
-            </TextBlock>
-            <Button Content="连接" Command="{Binding ConnectServerAsync}"
-                    Classes="Success" Theme="{DynamicResource SolidButton}"
-                    Margin="20 0" />
-            <Button Content="断开连接" Command="{Binding DisconnectAsync}"
-                    Classes="Danger" Theme="{DynamicResource SolidButton}" />
-        </StackPanel>
-        <HeaderedContentControl Header="订阅 | 取消订阅" Grid.Row="1" Grid.Column="0"
-                                Margin="0 0 10 0" Theme="{DynamicResource GroupBox}">
-            <UniformGrid Columns="2">
-                <CheckBox
-                    Content="NewEmailCommand"
-                    IsChecked="{Binding IsSubscribeSendEmailCommand}"
-                    Command="{Binding  SubscribeOrUnsubscribeSendEmailCommand}"
-                    Theme="{DynamicResource CardCheckBox}" />
-                <CheckBox
-                    Content="UpdateTimeCommand"
-                    IsChecked="{Binding IsSubscribeUpdateTimeCommand}"
-                    Command="{Binding  SubscribeOrUnsubscribeUpdateTimeCommand}"
-                    Theme="{DynamicResource CardCheckBox}" />
-                <CheckBox
-                    Content="EmailQuery"
-                    IsChecked="{Binding IsSubscribeEmailQuery}"
-                    Command="{Binding  SubscribeOrUnsubscribeEmailQuery}"
-                    Theme="{DynamicResource CardCheckBox}" />
-                <CheckBox
-                    Content="TimeQuery"
-                    IsChecked="{Binding IsSubscribeTimeQuery}"
-                    Command="{Binding  SubscribeOrUnsubscribeTimeQuery}"
-                    Theme="{DynamicResource CardCheckBox}" />
-            </UniformGrid>
-        </HeaderedContentControl>
-        <HeaderedContentControl Header="发布 | 查询" Grid.Row="1" Grid.Column="1"
-                                Margin="10 0 0 0" Theme="{DynamicResource GroupBox}">
-            <UniformGrid Columns="2">
-                <UniformGrid.Styles>
-                    <Style Selector="Button">
-                        <Setter Property="Width" Value="180" />
-                        <Setter Property="Height" Value="60" />
-                        <Setter Property="Margin" Value="5" />
-                    </Style>
-                </UniformGrid.Styles>
-                <Button
-                    Content="NewEmailCommand"
-                    Command="{Binding PublishNewEmailCommand}"
-                    Classes="Primary" Theme="{DynamicResource OutlineButton}" />
-                <Button
-                    Content="UpdateTimeCommand"
-                    Command="{Binding PublishUpdateTimeCommand}"
-                    Classes="Primary" Theme="{DynamicResource OutlineButton}" />
-                <Button
-                    Content="EmailQuery"
-                    Command="{Binding QueryEmailQuery}"
-                    Classes="Success" Theme="{DynamicResource OutlineButton}" />
-                <Button
-                    Content="TimeQuery"
-                    Command="{Binding QueryTimeQuery}"
-                    Classes="Success" Theme="{DynamicResource OutlineButton}" />
-            </UniformGrid>
-        </HeaderedContentControl>
-        <Border Grid.Row="2" Grid.ColumnSpan="2" Classes="Hover" Theme="{StaticResource CardBorder}" Margin="0 10 0 0"
-                Padding="5">
-            <log:LogView />
+    <Grid RowDefinitions="Auto,Auto,Auto,1*" ColumnDefinitions="1*" ColumnSpacing="10" RowSpacing="15">
+        <!-- 连接控制区 -->
+        <Border Grid.Row="0" Padding="10" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,1*,Auto,Auto" ColumnSpacing="10">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="事件服务主机：" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Address}" VerticalAlignment="Center" FontWeight="Bold" />
+                <Button Grid.Row="0" Grid.Column="2" Content="连接" Command="{Binding ConnectServerAsync}" Width="80" />
+                <Button Grid.Row="0" Grid.Column="3" Content="断开连接" Command="{Binding DisconnectAsync}" Width="80" />
+                <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Orientation="Horizontal" Margin="0 5 0 0">
+                    <Ellipse Width="12" Height="12" Fill="{Binding ConnectStatusColor}" Margin="0 0 8 0" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding ConnectStatusText}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 订阅/取消订阅区 -->
+        <Border Grid.Row="1" Padding="10" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+            <StackPanel>
+                <TextBlock Text="订阅/取消订阅事件" FontWeight="Bold" Margin="0 0 0 5" />
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10">
+                    <CheckBox Content="SendEmailCommand" IsChecked="{Binding IsSubscribeSendEmailCommand}" Command="{Binding SubscribeOrUnsubscribeSendEmailCommand}" />
+                    <CheckBox Grid.Column="1" Content="UpdateTimeCommand" IsChecked="{Binding IsSubscribeUpdateTimeCommand}" Command="{Binding SubscribeOrUnsubscribeUpdateTimeCommand}" />
+                    <CheckBox Grid.Column="2" Content="EmailQuery" IsChecked="{Binding IsSubscribeEmailQuery}" Command="{Binding SubscribeOrUnsubscribeEmailQuery}" />
+                    <CheckBox Grid.Column="3" Content="TimeQuery" IsChecked="{Binding IsSubscribeTimeQuery}" Command="{Binding SubscribeOrUnsubscribeTimeQuery}" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- 发布/查询区 -->
+        <Border Grid.Row="2" Padding="10" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+            <StackPanel>
+                <TextBlock Text="发布事件/发送查询" FontWeight="Bold" Margin="0 0 0 5" />
+                <Grid ColumnDefinitions="Auto,Auto,Auto,Auto" ColumnSpacing="10">
+                    <Button Content="发布SendEmailCommand" Command="{Binding PublishNewEmailCommand}" Width="160" />
+                    <Button Grid.Column="1" Content="发布UpdateTimeCommand" Command="{Binding PublishUpdateTimeCommand}" Width="160" />
+                    <Button Grid.Column="2" Content="查询EmailQuery" Command="{Binding QueryEmailQuery}" Width="120" />
+                    <Button Grid.Column="3" Content="查询TimeQuery" Command="{Binding QueryTimeQuery}" Width="120" />
+                </Grid>
+            </StackPanel>
+        </Border>
+
+        <!-- 事件日志区 -->
+        <Border Grid.Row="3" Padding="10" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="5">
+            <Grid RowDefinitions="Auto,1*">
+                <TextBlock Text="事件日志" FontWeight="Bold" Margin="0 0 0 5" />
+                <log:LogView Grid.Row="1" />
+            </Grid>
         </Border>
     </Grid>
 </Window>
