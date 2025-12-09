@@ -1,4 +1,4 @@
-﻿using CodeWF.NetWeaver;
+using CodeWF.NetWeaver;
 using CodeWF.NetWeaver.Base;
 using Heartbeat = CodeWF.EventBus.Socket.Models.Heartbeat;
 
@@ -38,7 +38,7 @@ public class EventClient : IEventClient
         var ipEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
         ConnectStatus = ConnectStatus.IsConnecting;
 
-        var task= Task.Factory.StartNew(async () =>
+        await Task.Run(async () =>
         {
             while (!_cancellationTokenSource.IsCancellationRequested)
                 try
@@ -63,7 +63,6 @@ public class EventClient : IEventClient
                     // TODO Need to handle event services that are connected incorrectly (i.e. event services are not responding to its type correctly)
                 }
         }, _cancellationTokenSource.Token);
-        await task.Result;
         return ConnectStatus.Connected == ConnectStatus;
     }
 
@@ -167,10 +166,9 @@ public class EventClient : IEventClient
         }
     }
 
-    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage,
-        int overtimeMilliseconds)
+    public async Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(string subject, TQuery message, int overtimeMilliseconds)
     {
-        errorMessage = string.Empty;
+        var errorMessage = string.Empty;
         var taskId = SocketHelper.GetNewTaskId();
         try
         {
@@ -182,31 +180,53 @@ public class EventClient : IEventClient
             };
             _queryTaskIdAndResponse[request.TaskId] = default;
             SendCommand(request);
-            if (!ActionHelper.CheckOvertime(() =>
+
+            var timeoutTask = Task.Delay(overtimeMilliseconds);
+            var completionTask = new TaskCompletionSource<bool>();
+
+            // 使用异步方式等待响应，避免线程阻塞
+            var checkTask = Task.Run(async () =>
+            {
+                while (_cancellationTokenSource is { IsCancellationRequested: false }
+                       && _queryTaskIdAndResponse.TryGetValue(taskId, out var updateEvent)
+                       && updateEvent == default)
                 {
-                    while (_cancellationTokenSource is { IsCancellationRequested: false }
-                           && _queryTaskIdAndResponse.TryGetValue(taskId, out var updateEvent)
-                           && updateEvent == default)
-                        Thread.Sleep(TimeSpan.FromMilliseconds(10));
-                }, overtimeMilliseconds))
+                    await Task.Delay(10); // 异步等待10毫秒
+                }
+                completionTask.SetResult(true);
+            });
+
+            // 等待完成或超时
+            var completedTask = await Task.WhenAny(checkTask, timeoutTask);
+            if (completedTask == timeoutTask)
+            {
                 throw new Exception("Query timeout, please try again!");
+            }
 
             if (_queryTaskIdAndResponse.TryGetValue(taskId, out var value)
                 && value != null)
-                return (TResponse)value.Buffer!.DeserializeObject(typeof(TResponse));
+                return ((TResponse)value.Buffer!.DeserializeObject(typeof(TResponse)), string.Empty);
 
-            return default;
+            return (default, string.Empty);
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
             Debug.WriteLine(ex.Message);
-            return default;
+            return (default, errorMessage);
         }
         finally
         {
             _queryTaskIdAndResponse.TryRemove(taskId, out _);
         }
+    }
+
+    // 保留同步版本，但内部使用异步实现
+    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage, int overtimeMilliseconds = 3000)
+    {
+        var result = QueryAsync<TQuery, TResponse>(subject, message, overtimeMilliseconds).GetAwaiter().GetResult();
+        errorMessage = result.ErrorMessage;
+        return result.Result;
     }
 
     #endregion
@@ -246,8 +266,9 @@ public class EventClient : IEventClient
                 if (!_responses.TryTake(out var response, TimeSpan.FromMilliseconds(10))) continue;
 
                 if (response.IsMessage<ResponseCommon>())
-                    HandleResponse(response.Message<ResponseCommon>());
-                else if (response.IsMessage<UpdateEvent>()) HandleResponse(response.Message<UpdateEvent>());
+                HandleResponse(response.Message<ResponseCommon>());
+            else if (response.IsMessage<UpdateEvent>()) HandleResponse(response.Message<UpdateEvent>());
+            else if (response.IsMessage<Heartbeat>()) HandleResponse(response.Message<Heartbeat>());
             }
         });
     }
@@ -274,7 +295,7 @@ public class EventClient : IEventClient
                 }
                 catch (Exception)
                 {
-                    _trySendHeartbeatTimes++;
+                    Interlocked.Increment(ref _trySendHeartbeatTimes);
                     Debug.WriteLine(
                         $"Sending heartbeat abnormality, will attempt to resend!({MaxTrySendHeartTime - _trySendHeartbeatTimes}/{MaxTrySendHeartTime})");
                 }
@@ -284,18 +305,29 @@ public class EventClient : IEventClient
         });
     }
 
-    private void CheckIsEventServer()
+    private async Task CheckIsEventServerAsync()
     {
         _requestIsEventServerTaskId = SocketHelper.GetNewTaskId();
         SendCommand(new RequestIsEventServer { TaskId = _requestIsEventServerTaskId },
             false);
 
-        if (!ActionHelper.CheckOvertime(() =>
+        var timeoutTask = Task.Delay(3000); // 默认3秒超时
+        var completionTask = new TaskCompletionSource<bool>();
+
+        // 使用异步方式等待响应，避免线程阻塞
+        var checkTask = Task.Run(async () =>
+        {
+            while (_cancellationTokenSource is { IsCancellationRequested: false } &&
+                   _requestIsEventServerTaskId != null)
             {
-                while (_cancellationTokenSource is { IsCancellationRequested: false } &&
-                       _requestIsEventServerTaskId != null)
-                    Thread.Sleep(TimeSpan.FromMilliseconds(10));
-            }))
+                await Task.Delay(10); // 异步等待10毫秒
+            }
+            completionTask.SetResult(true);
+        });
+
+        // 等待完成或超时
+        var completedTask = await Task.WhenAny(checkTask, timeoutTask);
+        if (completedTask == timeoutTask)
         {
             ConnectStatus = ConnectStatus.DisconnectedNeedCheckEventServer;
             _cancellationTokenSource?.Cancel();
@@ -304,6 +336,12 @@ public class EventClient : IEventClient
 
         ConnectStatus = ConnectStatus.Connected;
         SendHeartbeat();
+    }
+
+    // 保留原有方法用于向后兼容
+    private void CheckIsEventServer()
+    {
+        CheckIsEventServerAsync().Wait();
     }
 
     private void HandleResponse(ResponseCommon response)
@@ -335,6 +373,11 @@ public class EventClient : IEventClient
             {
                 Debug.WriteLine($"Send data exception：{ex.Message}");
             }
+    }
+
+    private void HandleResponse(Heartbeat response)
+    {
+        Interlocked.Exchange(ref _trySendHeartbeatTimes, 0);
     }
 
     private void SendCommand(INetObject command, bool needCheckConnectStatus = true)

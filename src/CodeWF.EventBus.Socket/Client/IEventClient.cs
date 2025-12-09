@@ -1,4 +1,4 @@
-﻿// ReSharper disable once CheckNamespace
+// ReSharper disable once CheckNamespace
 
 namespace CodeWF.EventBus.Socket;
 
@@ -18,6 +18,9 @@ public interface IEventClient
     bool Publish<T>(string subject, T message, out string errorMessage);
 
     TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage,
+        int overtimeMilliseconds = 3000);
+
+    Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(string subject, TQuery message,
         int overtimeMilliseconds = 3000);
 }
 
