@@ -190,8 +190,11 @@ public class EventClient : IEventClient
                 tcs.TrySetException(new Exception("Query timeout, please try again!"));
             }, null, overtimeMilliseconds, Timeout.Infinite);
 
+            // 创建一个安全的取消令牌
+            var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
+            
             // 循环检查是否有响应，使用异步等待避免线程阻塞
-            while (_cancellationTokenSource is { IsCancellationRequested: false })
+            while (_cancellationTokenSource is null || !_cancellationTokenSource.IsCancellationRequested)
             {
                 // 检查是否有响应
                 if (_queryTaskIdAndResponse.TryGetValue(taskId, out var responseEvent) && responseEvent != default)
@@ -202,8 +205,29 @@ public class EventClient : IEventClient
                     break;
                 }
                 
-                // 异步等待10毫秒
-                await Task.Delay(10, _cancellationTokenSource.Token);
+                // 异步等待10毫秒，使用安全的取消令牌
+                await Task.Delay(10, cancellationToken);
+                
+                // 检查是否已经超时
+                if (tcs.Task.IsCompleted)
+                {
+                    break;
+                }
+            }
+
+            // 如果循环退出且TaskCompletionSource未完成，则检查状态
+            if (!tcs.Task.IsCompleted)
+            {
+                if (_cancellationTokenSource?.IsCancellationRequested == true)
+                {
+                    tcs.TrySetException(new OperationCanceledException());
+                }
+                else
+                {
+                    // 如果不是取消，可能是连接断开或其他原因，设置超时
+                    timeoutTimer.Change(Timeout.Infinite, Timeout.Infinite);
+                    tcs.TrySetException(new Exception("Query timeout, please try again!"));
+                }
             }
 
             // 等待完成
