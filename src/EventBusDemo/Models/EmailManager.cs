@@ -9,20 +9,20 @@ public static class EmailManager
 {
     private static readonly List<string> Subjects =
     [
-        "Important Update",
-        "Your Order Confirmation",
-        "Password Reset Request",
-        "Account Verification",
-        "New Message from Support"
+        "重要更新",
+        "您的订单确认",
+        "密码重置请求",
+        "账户验证",
+        "来自支持的新消息"
     ];
 
     private static readonly List<string> Contents =
     [
-        "Please see the attached document for the latest updates.",
-        "Your order #123456 has been shipped.",
-        "We have received a request to reset your password. Please follow the link below.",
-        "Please verify your email address by clicking the link below.",
-        "We have received a new message for you from our support team."
+        "请查看附件文档获取最新更新。",
+        "您的订单 #123456 已发货。",
+        "我们已收到重置密码的请求。请点击下方链接。",
+        "请点击下方链接验证您的邮箱地址。",
+        "我们已收到支持团队给您的新消息。"
     ];
 
     public static NewEmailCommand GenerateRandomNewEmailNotification()

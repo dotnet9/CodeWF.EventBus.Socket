@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Diagnostics;
 using Path = System.IO.Path;
 
@@ -8,7 +8,7 @@ public class EventManagerViewModel : ViewModelBase
 {
     public EventManagerViewModel()
     {
-        Title = "EventBus Manager";
+        Title = "EventBus管理器";
         Address = "127.0.0.1:5329";
     }
 

@@ -28,16 +28,16 @@
                 </Style>
             </StackPanel.Styles>
             <TextBlock VerticalAlignment="Center">
-                <Run Text="Event service host：" />
+                <Run Text="事件服务主机：" />
                 <Run Text="{Binding Address}" />
             </TextBlock>
-            <Button Content="Connect" Command="{Binding ConnectServerAsync}"
+            <Button Content="连接" Command="{Binding ConnectServerAsync}"
                     Classes="Success" Theme="{DynamicResource SolidButton}"
                     Margin="20 0" />
-            <Button Content="Disconnect" Command="{Binding DisconnectAsync}"
+            <Button Content="断开连接" Command="{Binding DisconnectAsync}"
                     Classes="Danger" Theme="{DynamicResource SolidButton}" />
         </StackPanel>
-        <HeaderedContentControl Header="Subscribe | Unsubscribe" Grid.Row="1" Grid.Column="0"
+        <HeaderedContentControl Header="订阅 | 取消订阅" Grid.Row="1" Grid.Column="0"
                                 Margin="0 0 10 0" Theme="{DynamicResource GroupBox}">
             <UniformGrid Columns="2">
                 <CheckBox
@@ -62,7 +62,7 @@
                     Theme="{DynamicResource CardCheckBox}" />
             </UniformGrid>
         </HeaderedContentControl>
-        <HeaderedContentControl Header="Publish | Query" Grid.Row="1" Grid.Column="1"
+        <HeaderedContentControl Header="发布 | 查询" Grid.Row="1" Grid.Column="1"
                                 Margin="10 0 0 0" Theme="{DynamicResource GroupBox}">
             <UniformGrid Columns="2">
                 <UniformGrid.Styles>

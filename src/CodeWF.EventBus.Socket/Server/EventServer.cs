@@ -1,4 +1,4 @@
-﻿// ReSharper disable once CheckNamespace
+// ReSharper disable once CheckNamespace
 
 namespace CodeWF.EventBus.Socket;
 
@@ -34,7 +34,7 @@ public class EventServer : IEventServer
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Handle client connection online exception：{ex.Message}");
+                    Debug.WriteLine($"处理客户端连接上线异常：{ex.Message}");
                 }
         });
     }
@@ -70,13 +70,13 @@ public class EventServer : IEventServer
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Handle publish exception：{ex.Message}");
+                            Debug.WriteLine($"处理发布异常：{ex.Message}");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Handle publish exception：{ex.Message}");
+                    Debug.WriteLine($"处理发布异常：{ex.Message}");
                 }
 
             await Task.CompletedTask;
@@ -114,13 +114,13 @@ public class EventServer : IEventServer
                         }
                         catch (Exception ex)
                         {
-                            Debug.WriteLine($"Handle query exception：{ex.Message}");
+                            Debug.WriteLine($"处理查询异常：{ex.Message}");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Handle query exception：{ex.Message}");
+                    Debug.WriteLine($"处理查询异常：{ex.Message}");
                 }
 
             await Task.CompletedTask;
@@ -157,7 +157,7 @@ public class EventServer : IEventServer
                     }
                     catch (Exception ex)
                     {
-                        Debug.WriteLine($"Handle query response exception：{ex.Message}");
+                        Debug.WriteLine($"处理查询响应异常：{ex.Message}");
                     }
                     finally
                     {
@@ -167,7 +167,7 @@ public class EventServer : IEventServer
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Handle query response exception：{ex.Message}");
+                    Debug.WriteLine($"处理查询响应异常：{ex.Message}");
                 }
 
             await Task.CompletedTask;
@@ -199,7 +199,7 @@ public class EventServer : IEventServer
                 }
                 catch (SocketException ex)
                 {
-                    Debug.WriteLine($"Remote host exception, the client will be removed：{ex.Message}");
+                    Debug.WriteLine($"远程主机异常，客户端将被移除：{ex.Message}");
                     RemoveClient(tcpClient);
                     break;
                 }
@@ -230,7 +230,7 @@ public class EventServer : IEventServer
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Send command：{ex.Message}");
+            Debug.WriteLine($"发送命令：{ex.Message}");
         }
     }
 
@@ -370,7 +370,7 @@ public class EventServer : IEventServer
                 {
                     ConnectStatus = ConnectStatus.Disconnected;
                     Debug.WriteLine(
-                        $"TCP service startup exception, will restart in {RestartInterval / 1000} seconds：{ex.Message}");
+                        $"TCP服务启动异常，将在 {RestartInterval / 1000} 秒后重启：{ex.Message}");
                     await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
                 }
         }, _cancellationTokenSource.Token);

@@ -27,14 +27,14 @@
     </Window.Styles>
     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
         <StackPanel Orientation="Horizontal">
-            <TextBlock Text="Address：" VerticalAlignment="Center" />
+            <TextBlock Text="地址：" VerticalAlignment="Center" />
             <TextBox Text="{Binding Address}" Width="200" />
         </StackPanel>
         <StackPanel Orientation="Horizontal" Margin="0 20 0 0">
-            <Button Content="New server"
+            <Button Content="新建服务器"
                     Command="{Binding OpenEventServer}" Margin="0 0 40 0"
                     Classes="Primary" Theme="{DynamicResource SolidButton}" />
-            <Button Content="New client"
+            <Button Content="新建客户端"
                     Command="{Binding OpenEventClient}"
                     Classes="Success" Theme="{DynamicResource OutlineButton}" />
         </StackPanel>

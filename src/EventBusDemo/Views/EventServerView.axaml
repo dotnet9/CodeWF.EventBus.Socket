@@ -23,12 +23,12 @@
     <Grid RowDefinitions="Auto *">
         <StackPanel Orientation="Horizontal">
             <TextBlock VerticalAlignment="Center">
-                <Run Text="Event service address：" />
+                <Run Text="事件服务地址：" />
                 <Run Text="{Binding Address}" />
             </TextBlock>
-            <Button Content="Run" Command="{Binding RunServer}"
+            <Button Content="运行" Command="{Binding RunServer}"
                     Classes="Success" Theme="{DynamicResource SolidButton}" Margin="20 0" />
-            <Button Content="Stop" Command="{Binding Stop}"
+            <Button Content="停止" Command="{Binding Stop}"
                     Classes="Danger" Theme="{DynamicResource SolidButton}" />
         </StackPanel>
         <Border Grid.Row="1" Classes="Hover" Theme="{StaticResource CardBorder}" Padding="5">

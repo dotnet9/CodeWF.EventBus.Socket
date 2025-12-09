@@ -17,7 +17,7 @@ public class EventClientViewModel : ViewModelBase
     public EventClientViewModel(ApplicationConfig config)
     {
         Address = config.GetHost();
-        Title = "EventBus Client";
+        Title = "EventBus客户端";
     }
 
     public bool IsSubscribeSendEmailCommand
@@ -48,7 +48,7 @@ public class EventClientViewModel : ViewModelBase
     {
         if (_eventClient?.ConnectStatus == ConnectStatus.Connected)
         {
-            Logger.Info("The event service has been connected!");
+            Logger.Info("事件服务已连接！");
             return;
         }
 
@@ -56,14 +56,14 @@ public class EventClientViewModel : ViewModelBase
         var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
         await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
         Logger.Info(
-            "Connecting to event service, please retrieve the connection status through ConnectStatus later!");
+            "正在连接事件服务，请稍后通过ConnectStatus获取连接状态！");
     }
 
     public async Task DisconnectAsync()
     {
         _eventClient?.Disconnect();
         _eventClient = null;
-        Logger.Warn("Disconnected from event service");
+        Logger.Warn("已断开与事件服务的连接");
     }
 
     public async Task SubscribeOrUnsubscribeSendEmailCommand()
@@ -113,10 +113,10 @@ public class EventClientViewModel : ViewModelBase
         if (_eventClient!.Publish(EventNames.SendEmailCommand,
                 EmailManager.GenerateRandomNewEmailNotification(),
                 out var errorMessage))
-            Logger.Info($"Publish {EventNames.SendEmailCommand}");
+            Logger.Info($"发布 {EventNames.SendEmailCommand}");
         else
             Logger.Error(
-                $"Publish {EventNames.SendEmailCommand} failed: [{errorMessage}]");
+                $"发布 {EventNames.SendEmailCommand} 失败: [{errorMessage}]");
     }
 
     public async Task PublishUpdateTimeCommand()
@@ -126,10 +126,10 @@ public class EventClientViewModel : ViewModelBase
         if (_eventClient!.Publish(EventNames.UpdateTimeCommand,
                 DateTimeOffset.Now.ToUnixTimeSeconds(),
                 out var errorMessage))
-            Logger.Info($"Publish {EventNames.UpdateTimeCommand}");
+            Logger.Info($"发布 {EventNames.UpdateTimeCommand}");
         else
             Logger.Error(
-                $"Publish {EventNames.UpdateTimeCommand} failed: [{errorMessage}]");
+                $"发布 {EventNames.UpdateTimeCommand} 失败: [{errorMessage}]");
     }
 
     public async Task QueryEmailQuery()
@@ -139,17 +139,17 @@ public class EventClientViewModel : ViewModelBase
         try
         {
             var result = await _eventClient!.QueryAsync<EmailQuery, EmailQueryResponse>(EventNames.EmailQuery,
-                new EmailQuery { Subject = "Account" }, 3000);
+                new EmailQuery { Subject = "账户" }, 3000);
             if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
-                Logger.Info($"Query {EventNames.EmailQuery}, result: {result.Result}");
+                Logger.Info($"查询 {EventNames.EmailQuery}, 结果: {result.Result}");
             else
                 Logger.Error(
-                    $"Query {EventNames.EmailQuery} failed: [{result.ErrorMessage}]");
+                    $"查询 {EventNames.EmailQuery} 失败: [{result.ErrorMessage}]");
         }
         catch (Exception ex)
         {
             Logger.Error(
-                $"Query {EventNames.EmailQuery} failed: [{ex.Message}]");
+                $"查询 {EventNames.EmailQuery} 失败: [{ex.Message}]");
         }
     }
 
@@ -160,57 +160,57 @@ public class EventClientViewModel : ViewModelBase
         try
         {
             var result =
-                await _eventClient!.QueryAsync<string, string>(EventNames.TimeQuery, "I need new time", 3000);
+                await _eventClient!.QueryAsync<string, string>(EventNames.TimeQuery, "我需要新时间", 3000);
             if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
-                Logger.Info($"Query {EventNames.TimeQuery}, result: {result.Result}");
+                Logger.Info($"查询 {EventNames.TimeQuery}, 结果: {result.Result}");
             else
                 Logger.Error(
-                    $"Query {EventNames.TimeQuery} failed: [{result.ErrorMessage}]");
+                    $"查询 {EventNames.TimeQuery} 失败: [{result.ErrorMessage}]");
         }
         catch (Exception ex)
         {
             Logger.Error(
-                $"Query {EventNames.TimeQuery} failed: [{ex.Message}]");
+                $"查询 {EventNames.TimeQuery} 失败: [{ex.Message}]");
         }
     }
 
 
     private void ReceiveNewEmailCommand(NewEmailCommand command)
     {
-        Logger.Info($"Received {EventNames.SendEmailCommand} is [{command}]");
+        Logger.Info($"收到 {EventNames.SendEmailCommand} 是 [{command}]");
     }
 
     private void ReceiveUpdateTimeCommand(long command)
     {
-        Logger.Info($"Received {EventNames.UpdateTimeCommand} is [{command}]");
+        Logger.Info($"收到 {EventNames.UpdateTimeCommand} 是 [{command}]");
     }
 
     private void ReceiveEmailQuery(EmailQuery request)
     {
-        Logger.Info($"Received query request [{EventNames.EmailQuery}]: [{request}]");
+        Logger.Info($"收到查询请求 [{EventNames.EmailQuery}]: [{request}]");
         var response = new EmailQueryResponse { Emails = EmailManager.QueryEmail(request.Subject) };
         if (_eventClient!.Publish(EventNames.EmailQuery, response,
                 out var errorMessage))
-            Logger.Info($"Response query result: {response}");
+            Logger.Info($"响应查询结果: {response}");
         else
-            Logger.Error($"Response query failed: {errorMessage}");
+            Logger.Error($"响应查询失败: {errorMessage}");
     }
 
     private void ReceiveTimeQuery(string request)
     {
-        Logger.Info($"Received query request [{EventNames.TimeQuery}]: [{request}]");
+        Logger.Info($"收到查询请求 [{EventNames.TimeQuery}]: [{request}]");
         var response = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss fff");
         if (_eventClient!.Publish(EventNames.TimeQuery, response,
                 out var errorMessage))
-            Logger.Info($"Response query result: {response}");
+            Logger.Info($"响应查询结果: {response}");
         else
-            Logger.Error($"Response query failed: {errorMessage}");
+            Logger.Error($"响应查询失败: {errorMessage}");
     }
 
     private bool CheckIfEventConnected(bool showMsg = false)
     {
         if (_eventClient is { ConnectStatus: ConnectStatus.Connected }) return true;
-        if (showMsg) Logger.Warn("Please connect to the event service before sending the event");
+        if (showMsg) Logger.Warn("发送事件前请先连接事件服务");
 
         return false;
     }

@@ -55,7 +55,7 @@ public class EventClient : IEventClient
                 catch (SocketException ex)
                 {
                     Debug.WriteLine(
-                        $"TCP service connection exception, will reconnect in {ReconnectInterval / 1000} seconds：{ex.Message}");
+                        $"TCP服务连接异常，将在 {ReconnectInterval / 1000} 秒后重新连接：{ex.Message}");
                     await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval));
                 }
                 catch (Exception)
@@ -187,7 +187,7 @@ public class EventClient : IEventClient
             // 创建一个定时器用于超时处理
             using var timeoutTimer = new Timer(_ =>
             {
-                tcs.TrySetException(new Exception("Query timeout, please try again!"));
+                tcs.TrySetException(new Exception("查询超时，请重试！"));
             }, null, overtimeMilliseconds, Timeout.Infinite);
 
             // 创建一个安全的取消令牌
@@ -226,7 +226,7 @@ public class EventClient : IEventClient
                 {
                     // 如果不是取消，可能是连接断开或其他原因，设置超时
                     timeoutTimer.Change(Timeout.Infinite, Timeout.Infinite);
-                    tcs.TrySetException(new Exception("Query timeout, please try again!"));
+                    tcs.TrySetException(new Exception("查询超时，请重试！"));
                 }
             }
 
@@ -237,11 +237,11 @@ public class EventClient : IEventClient
                 return ((TResponse)updateEvent.Buffer.DeserializeObject(typeof(TResponse)), string.Empty);
             }
 
-            return (default, "No response received from server");
+            return (default, "未从服务器收到响应");
         }
         catch (OperationCanceledException)
         {
-            return (default, "Operation canceled");
+            return (default, "操作已取消");
         }
         catch (Exception ex)
         {
@@ -291,12 +291,12 @@ public class EventClient : IEventClient
                 }
                 catch (SocketException ex)
                 {
-                    Debug.WriteLine($"Receive data exception：{ex.Message}");
+                    Debug.WriteLine($"接收数据异常：{ex.Message}");
                     break;
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"Receive data exception：{ex.Message}");
+                    Debug.WriteLine($"接收数据异常：{ex.Message}");
                 }
 
             return Task.CompletedTask;
@@ -343,7 +343,7 @@ public class EventClient : IEventClient
                 {
                     Interlocked.Increment(ref _trySendHeartbeatTimes);
                     Debug.WriteLine(
-                        $"Sending heartbeat abnormality, will attempt to resend!({MaxTrySendHeartTime - _trySendHeartbeatTimes}/{MaxTrySendHeartTime})");
+                        $"发送心跳异常，将尝试重新发送！({MaxTrySendHeartTime - _trySendHeartbeatTimes}/{MaxTrySendHeartTime})");
                 }
 
                 await Task.Delay(TimeSpan.FromMilliseconds(HeartbeatInterval));
@@ -377,7 +377,7 @@ public class EventClient : IEventClient
         {
             ConnectStatus = ConnectStatus.DisconnectedNeedCheckEventServer;
             _cancellationTokenSource?.Cancel();
-            throw new Exception("Please check if the event bus service is connected correctly");
+            throw new Exception("请检查事件总线服务是否连接正确");
         }
 
         ConnectStatus = ConnectStatus.Connected;
@@ -417,7 +417,7 @@ public class EventClient : IEventClient
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Send data exception：{ex.Message}");
+                Debug.WriteLine($"发送数据异常：{ex.Message}");
             }
     }
 
@@ -429,7 +429,7 @@ public class EventClient : IEventClient
     private void SendCommand(INetObject command, bool needCheckConnectStatus = true)
     {
         if (needCheckConnectStatus && ConnectStatus != ConnectStatus.Connected)
-            throw new Exception("Event service not connected, unable to send event!");
+            throw new Exception("事件服务未连接，无法发送事件！");
 
         var buffer = command.Serialize(DateTime.Now.ToFileTimeUtc());
         _client?.Send(buffer);
