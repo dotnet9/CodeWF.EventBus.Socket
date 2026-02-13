@@ -181,21 +181,21 @@ public class EventServer : IEventServer
             while (_cancellationTokenSource?.IsCancellationRequested == false)
                 try
                 {
-                    if (tcpClient.ReadPacket(out var buffer, out var headInfo))
-                    {
-                        if (headInfo.IsNetObject<RequestIsEventServer>())
-                            HandleRequest(tcpClient, buffer.Deserialize<RequestIsEventServer>());
-                        else if (headInfo.IsNetObject<RequestSubscribe>())
-                            HandleRequest(tcpClient, buffer.Deserialize<RequestSubscribe>());
-                        else if (headInfo.IsNetObject<RequestUnsubscribe>())
-                            HandleRequest(tcpClient, buffer.Deserialize<RequestUnsubscribe>());
-                        else if (headInfo.IsNetObject<RequestPublish>())
-                            HandleRequest(tcpClient, buffer.Deserialize<RequestPublish>());
-                        else if (headInfo.IsNetObject<RequestQuery>())
-                            HandleRequest(tcpClient, buffer.Deserialize<RequestQuery>());
-                        else if (headInfo.IsNetObject<Heartbeat>())
-                            HandleRequest(tcpClient, buffer.Deserialize<Heartbeat>());
-                    }
+                    var (success, buffer, headInfo) = await tcpClient.ReadPacketAsync(_cancellationTokenSource.Token);
+                    if (!success) break;
+
+                    if (headInfo.IsNetObject<RequestIsEventServer>())
+                        HandleRequest(tcpClient, buffer.Deserialize<RequestIsEventServer>());
+                    else if (headInfo.IsNetObject<RequestSubscribe>())
+                        HandleRequest(tcpClient, buffer.Deserialize<RequestSubscribe>());
+                    else if (headInfo.IsNetObject<RequestUnsubscribe>())
+                        HandleRequest(tcpClient, buffer.Deserialize<RequestUnsubscribe>());
+                    else if (headInfo.IsNetObject<RequestPublish>())
+                        HandleRequest(tcpClient, buffer.Deserialize<RequestPublish>());
+                    else if (headInfo.IsNetObject<RequestQuery>())
+                        HandleRequest(tcpClient, buffer.Deserialize<RequestQuery>());
+                    else if (headInfo.IsNetObject<Heartbeat>())
+                        HandleRequest(tcpClient, buffer.Deserialize<Heartbeat>());
                 }
                 catch (SocketException ex)
                 {

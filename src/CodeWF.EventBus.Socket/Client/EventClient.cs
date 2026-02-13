@@ -166,7 +166,8 @@ public class EventClient : IEventClient
         }
     }
 
-    public async Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(string subject, TQuery message, int overtimeMilliseconds)
+    public async Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(string subject,
+        TQuery message, int overtimeMilliseconds)
     {
         var errorMessage = string.Empty;
         var taskId = SocketHelper.GetNewTaskId();
@@ -183,16 +184,14 @@ public class EventClient : IEventClient
 
             // 使用TaskCompletionSource实现异步等待响应
             var tcs = new TaskCompletionSource<UpdateEvent>();
-            
+
             // 创建一个定时器用于超时处理
-            using var timeoutTimer = new Timer(_ =>
-            {
-                tcs.TrySetException(new Exception("查询超时，请重试！"));
-            }, null, overtimeMilliseconds, Timeout.Infinite);
+            using var timeoutTimer = new Timer(_ => { tcs.TrySetException(new Exception("查询超时，请重试！")); }, null,
+                overtimeMilliseconds, Timeout.Infinite);
 
             // 创建一个安全的取消令牌
             var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
-            
+
             // 循环检查是否有响应，使用异步等待避免线程阻塞
             while (_cancellationTokenSource is null || !_cancellationTokenSource.IsCancellationRequested)
             {
@@ -204,10 +203,10 @@ public class EventClient : IEventClient
                     tcs.TrySetResult(responseEvent);
                     break;
                 }
-                
+
                 // 异步等待10毫秒，使用安全的取消令牌
                 await Task.Delay(10, cancellationToken);
-                
+
                 // 检查是否已经超时
                 if (tcs.Task.IsCompleted)
                 {
@@ -256,7 +255,8 @@ public class EventClient : IEventClient
     }
 
     // 保留同步版本，但内部使用异步实现，避免死锁
-    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage, int overtimeMilliseconds = 3000)
+    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage,
+        int overtimeMilliseconds = 3000)
     {
         try
         {
@@ -281,13 +281,15 @@ public class EventClient : IEventClient
 
     private void ListenForServer()
     {
-        Task.Factory.StartNew(() =>
+        Task.Factory.StartNew(async () =>
         {
             while (_client != null && _cancellationTokenSource is { IsCancellationRequested: false })
                 try
                 {
-                    if (_client.ReadPacket(out var buffer, out var headInfo))
-                        _responses.Add(new SocketCommand(headInfo, buffer, _client));
+                    var (success, buffer, headInfo) = await _client.ReadPacketAsync(_cancellationTokenSource.Token);
+                    if (!success) break;
+
+                    _responses.Add(new SocketCommand(headInfo, buffer, _client));
                 }
                 catch (SocketException ex)
                 {
@@ -312,9 +314,9 @@ public class EventClient : IEventClient
                 if (!_responses.TryTake(out var response, TimeSpan.FromMilliseconds(10))) continue;
 
                 if (response.IsMessage<ResponseCommon>())
-                HandleResponse(response.Message<ResponseCommon>());
-            else if (response.IsMessage<UpdateEvent>()) HandleResponse(response.Message<UpdateEvent>());
-            else if (response.IsMessage<Heartbeat>()) HandleResponse(response.Message<Heartbeat>());
+                    HandleResponse(response.Message<ResponseCommon>());
+                else if (response.IsMessage<UpdateEvent>()) HandleResponse(response.Message<UpdateEvent>());
+                else if (response.IsMessage<Heartbeat>()) HandleResponse(response.Message<Heartbeat>());
             }
         });
     }
@@ -368,6 +370,7 @@ public class EventClient : IEventClient
             {
                 await Task.Delay(10); // 异步等待10毫秒
             }
+
             completionTask.SetResult(true);
         });
 
