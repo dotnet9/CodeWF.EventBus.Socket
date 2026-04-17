@@ -27,19 +27,19 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Avalonia" Version="11.3.12" />
-		<PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
+		<PackageReference Include="Avalonia" Version="11.3.14" />
+		<PackageReference Include="Avalonia.Desktop" Version="11.3.14" />
 		<!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-		<PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.12" />
+		<PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.14" />
 		<PackageReference Include="CodeWF.LogViewer.Avalonia" Version="11.3.12.1" />
 		<PackageReference Include="Semi.Avalonia" Version="11.3.7.1" />
-		<PackageReference Include="Irihi.Ursa" Version="1.14.0" />
+		<PackageReference Include="Irihi.Ursa" Version="1.15.0" />
 		<PackageReference Include="Irihi.Ursa.PrismExtension" Version="9.0.1" />
-		<PackageReference Include="Irihi.Ursa.Themes.Semi" Version="1.14.0" />
+		<PackageReference Include="Irihi.Ursa.Themes.Semi" Version="1.15.0" />
 		<PackageReference Include="Prism.Avalonia" Version="9.0.537.11300-pre" />
 		<PackageReference Include="Prism.DryIoc.Avalonia" Version="9.0.537.11300-pre" />
-		<PackageReference Include="ReactiveUI.Avalonia" Version="11.3.8" />
-		<PackageReference Include="YY-Thunks" Version="1.1.10-Beta3" />
+		<PackageReference Include="ReactiveUI.Avalonia" Version="11.4.12" />
+		<PackageReference Include="YY-Thunks" Version="1.2.1-Beta.3" />
 	</ItemGroup>
 
 	<ItemGroup>
