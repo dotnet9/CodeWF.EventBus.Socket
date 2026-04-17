@@ -1,6 +1,4 @@
 using System.Threading.Channels;
-using CodeWF.NetWeaver;
-using CodeWF.NetWeaver.Base;
 using Heartbeat = CodeWF.EventBus.Socket.Models.Heartbeat;
 
 // ReSharper disable once CheckNamespace
