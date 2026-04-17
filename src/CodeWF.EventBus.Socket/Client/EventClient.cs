@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using CodeWF.NetWeaver;
 using CodeWF.NetWeaver.Base;
 using Heartbeat = CodeWF.EventBus.Socket.Models.Heartbeat;
@@ -10,7 +11,7 @@ public class EventClient : IEventClient
     private const int ReconnectInterval = 3000;
     private readonly ConcurrentDictionary<string, UpdateEvent?> _queryTaskIdAndResponse = new();
 
-    private readonly BlockingCollection<SocketCommand> _responses = new(new ConcurrentQueue<SocketCommand>());
+    private readonly Channel<SocketCommand> _responses = Channel.CreateUnbounded<SocketCommand>();
 
     private readonly ConcurrentDictionary<string, List<Delegate>> _subjectAndHandlers = new();
     private CancellationTokenSource? _cancellationTokenSource;
@@ -289,7 +290,7 @@ public class EventClient : IEventClient
                     var (success, buffer, headInfo) = await _client.ReadPacketAsync(_cancellationTokenSource.Token);
                     if (!success) break;
 
-                    _responses.Add(new SocketCommand(headInfo, buffer, _client));
+                    await _responses.Writer.WriteAsync(new SocketCommand(headInfo, buffer, _client));
                 }
                 catch (SocketException ex)
                 {
@@ -307,16 +308,29 @@ public class EventClient : IEventClient
 
     private void CheckResponse()
     {
-        Task.Factory.StartNew(() =>
+        Task.Factory.StartNew(async () =>
         {
             while (_cancellationTokenSource is { IsCancellationRequested: false })
             {
-                if (!_responses.TryTake(out var response, TimeSpan.FromMilliseconds(10))) continue;
+                try
+                {
+                    var readTask = _responses.Reader.WaitToReadAsync(_cancellationTokenSource.Token);
+                    if (!await readTask) break;
+                    if (!_responses.Reader.TryRead(out var response)) continue;
 
-                if (response.IsMessage<ResponseCommon>())
-                    HandleResponse(response.Message<ResponseCommon>());
-                else if (response.IsMessage<UpdateEvent>()) HandleResponse(response.Message<UpdateEvent>());
-                else if (response.IsMessage<Heartbeat>()) HandleResponse(response.Message<Heartbeat>());
+                    if (response.IsMessage<ResponseCommon>())
+                        HandleResponse(response.Message<ResponseCommon>());
+                    else if (response.IsMessage<UpdateEvent>()) HandleResponse(response.Message<UpdateEvent>());
+                    else if (response.IsMessage<Heartbeat>()) HandleResponse(response.Message<Heartbeat>());
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"处理响应异常：{ex.Message}");
+                }
             }
         });
     }

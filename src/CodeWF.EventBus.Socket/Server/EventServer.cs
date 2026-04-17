@@ -1,3 +1,5 @@
+using System.Threading.Channels;
+
 // ReSharper disable once CheckNamespace
 
 namespace CodeWF.EventBus.Socket;
@@ -6,9 +8,9 @@ public class EventServer : IEventServer
 {
     private const int RestartInterval = 3000;
 
-    private readonly BlockingCollection<RequestPublish> _needPublishEvents = new();
-    private readonly BlockingCollection<RequestQuery> _needQueryEvents = new();
-    private readonly BlockingCollection<RequestPublish> _needResponseQueryEvents = new();
+    private readonly Channel<RequestPublish> _needPublishEvents = Channel.CreateUnbounded<RequestPublish>();
+    private readonly Channel<RequestQuery> _needQueryEvents = Channel.CreateUnbounded<RequestQuery>();
+    private readonly Channel<RequestPublish> _needResponseQueryEvents = Channel.CreateUnbounded<RequestPublish>();
 
     private readonly ConcurrentDictionary<string, System.Net.Sockets.Socket>
         _querySubjectAndClients = new();
@@ -46,7 +48,12 @@ public class EventServer : IEventServer
             while (_cancellationTokenSource?.IsCancellationRequested == false)
                 try
                 {
-                    if (!_needPublishEvents.TryTake(out var @event, TimeSpan.FromMilliseconds(10))) continue;
+                    if (!_needPublishEvents.Reader.TryRead(out var @event))
+                    {
+                        var readTask = _needPublishEvents.Reader.WaitToReadAsync(_cancellationTokenSource.Token);
+                        if (!await readTask) break;
+                        if (!_needPublishEvents.Reader.TryRead(out @event)) continue;
+                    }
 
                     if (!_subscribedSubjectAndClients.TryGetValue(@event.Subject, out var clients)) continue;
 
@@ -74,6 +81,10 @@ public class EventServer : IEventServer
                         }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"处理发布异常：{ex.Message}");
@@ -90,13 +101,18 @@ public class EventServer : IEventServer
             while (_cancellationTokenSource?.IsCancellationRequested == false)
                 try
                 {
-                    if (!_needQueryEvents.TryTake(out var query, TimeSpan.FromMilliseconds(10))) continue;
+                    if (!_needQueryEvents.Reader.TryRead(out var query))
+                    {
+                        var readTask = _needQueryEvents.Reader.WaitToReadAsync(_cancellationTokenSource.Token);
+                        if (!await readTask) break;
+                        if (!_needQueryEvents.Reader.TryRead(out query)) continue;
+                    }
 
                     if (!_subscribedSubjectAndClients.TryGetValue(query.Subject, out var clients)) continue;
 
                     var updateEvent = new UpdateEvent
                     {
-                        TaskId = SocketHelper.GetNewTaskId(), // query need create new taskid
+                        TaskId = SocketHelper.GetNewTaskId(),
                         Subject = query.Subject,
                         Buffer = query.Buffer
                     };
@@ -118,6 +134,10 @@ public class EventServer : IEventServer
                         }
                     }
                 }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
                 catch (Exception ex)
                 {
                     Debug.WriteLine($"处理查询异常：{ex.Message}");
@@ -134,7 +154,12 @@ public class EventServer : IEventServer
             while (_cancellationTokenSource?.IsCancellationRequested == false)
                 try
                 {
-                    if (!_needResponseQueryEvents.TryTake(out var response, TimeSpan.FromMilliseconds(10))) continue;
+                    if (!_needResponseQueryEvents.Reader.TryRead(out var response))
+                    {
+                        var readTask = _needResponseQueryEvents.Reader.WaitToReadAsync(_cancellationTokenSource.Token);
+                        if (!await readTask) break;
+                        if (!_needResponseQueryEvents.Reader.TryRead(out response)) continue;
+                    }
 
                     if (!_querySubjectAndClients.TryGetValue(response.Subject, out var client)
                         || !_querySubjectAndQueries.TryGetValue(response.Subject, out var query))
@@ -164,6 +189,10 @@ public class EventServer : IEventServer
                         _querySubjectAndClients.TryRemove(response.Subject, out _);
                         _querySubjectAndQueries.TryRemove(response.Subject, out _);
                     }
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
                 }
                 catch (Exception ex)
                 {
@@ -283,15 +312,13 @@ public class EventServer : IEventServer
     {
         try
         {
-            // 1. query
             if (_querySubjectAndClients.TryGetValue(command.Subject, out _))
             {
-                _needResponseQueryEvents.Add(command);
+                _needResponseQueryEvents.Writer.WriteAsync(command);
                 return;
             }
 
-            // 2. publish
-            _needPublishEvents.Add(command);
+            _needPublishEvents.Writer.WriteAsync(command);
 
             SendCommand(client, new ResponseCommon
             {
@@ -311,7 +338,7 @@ public class EventServer : IEventServer
         {
             _querySubjectAndClients[query.Subject] = client;
             _querySubjectAndQueries[query.Subject] = query;
-            _needQueryEvents.Add(query);
+            _needQueryEvents.Writer.WriteAsync(query);
         }
         catch (Exception ex)
         {

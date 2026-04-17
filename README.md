@@ -8,7 +8,7 @@ English | [简体中文](README-zh_CN.md)
 
 **Distributed Event Bus Implemented with Sockets, Supporting CQRS, and Independent of Third-Party MQ.**
 
-`CodeWF.EventBus.Socket` is a lightweight, Socket-based distributed event bus system designed to simplify event communication in distributed architectures. It allows processes to communicate through a publish/subscribe model without relying on external message queue services.
+`CodeWF.EventBus.Socket` is a lightweight, Socket-based distributed event bus system designed to simplify event communication in distributed architectures. It allows processes to communicate through a Publish/Subscribe (Pub/Sub) model without relying on external message queue services. With this library, you can easily implement synchronous calls (Commands in CQRS) and asynchronous event notifications between microservices.
 
 **Command**
 
