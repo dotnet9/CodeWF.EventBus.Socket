@@ -4,10 +4,8 @@ using EventBusDemo.Commands;
 using EventBusDemo.Models;
 using EventBusDemo.Queries;
 using EventBusDemo.Services;
-using Prism.Commands;
 using ReactiveUI;
 using System;
-
 using System.Threading.Tasks;
 
 namespace EventBusDemo.ViewModels;
@@ -41,75 +39,55 @@ public class EventClientViewModel : ViewModelBase
         }
     }
 
-    public bool CanConnect
-    {
-        get => !IsConnecting;
-    }
+    public bool CanConnect => !IsConnecting;
 
-    public bool CanDisconnect
-    {
-        get => !IsConnecting;
-    }
+    public bool CanDisconnect => !IsConnecting;
 
-    public string ConnectStatusText
-    {
-        get
+    public string ConnectStatusText =>
+        _connectStatus switch
         {
-            return _connectStatus switch
-            {
-                ConnectStatus.Connected => "已连接",
-                ConnectStatus.IsConnecting => "连接中",
-                _ => "未连接"
-            };
-        }
-    }
+            ConnectStatus.Connected => "已连接",
+            ConnectStatus.IsConnecting => "连接中",
+            _ => "未连接"
+        };
 
-    public string ConnectStatusColor
-    {
-        get
+    public string ConnectStatusColor =>
+        _connectStatus switch
         {
-            return _connectStatus switch
-            {
-                ConnectStatus.Connected => "Green",
-                ConnectStatus.IsConnecting => "Yellow",
-                _ => "Red"
-            };
-        }
-    }
+            ConnectStatus.Connected => "Green",
+            ConnectStatus.IsConnecting => "Yellow",
+            _ => "Red"
+        };
 
-
-
-    public bool IsSubscribeSendEmailCommand
+    public bool IsSubscribeInventoryAlertCommand
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    public bool IsSubscribeUpdateTimeCommand
+    public bool IsSubscribeStoreStatusCommand
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    public bool IsSubscribeEmailQuery
+    public bool IsSubscribeSalesSnapshotQuery
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
 
-    public bool IsSubscribeTimeQuery
+    public bool IsSubscribeServiceClockQuery
     {
         get;
         set => this.RaiseAndSetIfChanged(ref field, value);
     }
-
-
 
     public async Task ConnectServerAsync()
     {
         if (_eventClient?.ConnectStatus == ConnectStatus.Connected)
         {
-            Logger.Info("事件服务已连接！");
+            Logger.Info("事件服务已连接。");
             return;
         }
 
@@ -121,16 +99,22 @@ public class EventClientViewModel : ViewModelBase
         _eventClient ??= new EventClient();
         try
         {
-            var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-            var connected = await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
+            if (!EventBusAddressParser.TryParse(Address, out var host, out var port))
+            {
+                ConnectStatus = ConnectStatus.Disconnected;
+                Logger.Warn("事件服务地址格式无效，请使用 host:port、[::1]:port 或 tcp://host:port，例如 127.0.0.1:5329");
+                return;
+            }
+
+            var connected = await _eventClient.ConnectAsync(host, port);
             ConnectStatus = _eventClient.ConnectStatus;
             if (connected)
             {
-                Logger.Info("事件服务已连接！");
+                Logger.Info("事件服务连接成功。");
             }
             else
             {
-                Logger.Warn("事件服务连接未完成，请检查服务状态后重试。");
+                Logger.Warn("事件服务尚未完成连接，请检查服务状态后重试。");
             }
         }
         catch (Exception ex)
@@ -146,14 +130,14 @@ public class EventClientViewModel : ViewModelBase
         }
     }
 
-    public async Task DisconnectAsync()
+    public Task DisconnectAsync()
     {
         if (_eventClient == null)
         {
             ConnectStatus = ConnectStatus.Disconnected;
             this.RaisePropertyChanged(nameof(ConnectStatusText));
             this.RaisePropertyChanged(nameof(ConnectStatusColor));
-            return;
+            return Task.CompletedTask;
         }
 
         this.RaisePropertyChanged(nameof(ConnectStatusText));
@@ -164,7 +148,7 @@ public class EventClientViewModel : ViewModelBase
             _eventClient.Disconnect();
             _eventClient = null;
             ConnectStatus = ConnectStatus.Disconnected;
-            Logger.Warn("已断开与事件服务的连接");
+            Logger.Warn("已断开与事件服务的连接。");
         }
         catch (Exception ex)
         {
@@ -175,180 +159,261 @@ public class EventClientViewModel : ViewModelBase
             this.RaisePropertyChanged(nameof(ConnectStatusText));
             this.RaisePropertyChanged(nameof(ConnectStatusColor));
         }
+
+        return Task.CompletedTask;
     }
 
-    public async Task SubscribeOrUnsubscribeSendEmailCommand()
+    public Task SubscribeOrUnsubscribeInventoryAlertCommand()
     {
-        if (!CheckIfEventConnected(true)) return;
-
-        if (!IsSubscribeSendEmailCommand)
-            _eventClient?.Unsubscribe<NewEmailCommand>(EventNames.SendEmailCommand, ReceiveNewEmailCommand);
-        else
-            _eventClient?.Subscribe<NewEmailCommand>(EventNames.SendEmailCommand, ReceiveNewEmailCommand);
-    }
-
-    public async Task SubscribeOrUnsubscribeUpdateTimeCommand()
-    {
-        if (!CheckIfEventConnected(true)) return;
-
-        if (!IsSubscribeUpdateTimeCommand)
-            _eventClient?.Unsubscribe<long>(EventNames.UpdateTimeCommand, ReceiveUpdateTimeCommand);
-        else
-            _eventClient?.Subscribe<long>(EventNames.UpdateTimeCommand, ReceiveUpdateTimeCommand);
-    }
-
-    public async Task SubscribeOrUnsubscribeEmailQuery()
-    {
-        if (!CheckIfEventConnected(true)) return;
-
-        if (!IsSubscribeEmailQuery)
-            _eventClient?.Unsubscribe<EmailQuery>(EventNames.EmailQuery, ReceiveEmailQuery);
-        else
-            _eventClient?.Subscribe<EmailQuery>(EventNames.EmailQuery, ReceiveEmailQuery);
-    }
-
-    public async Task SubscribeOrUnsubscribeTimeQuery()
-    {
-        if (!CheckIfEventConnected(true)) return;
-
-        if (!IsSubscribeTimeQuery)
-            _eventClient?.Unsubscribe<string>(EventNames.TimeQuery, ReceiveTimeQuery);
-        else
-            _eventClient?.Subscribe<string>(EventNames.TimeQuery, ReceiveTimeQuery);
-    }
-
-    public async Task PublishNewEmailCommand()
-    {
-        if (!CheckIfEventConnected(true)) return;
-
-        var emailCommand = EmailManager.GenerateRandomNewEmailNotification();
-        if (_eventClient!.Publish(EventNames.SendEmailCommand,
-                emailCommand,
-                out var errorMessage))
+        if (!CheckIfEventConnected(true))
         {
-            Logger.Info($"发布 {EventNames.SendEmailCommand}: {emailCommand}");
+            return Task.CompletedTask;
+        }
+
+        if (!IsSubscribeInventoryAlertCommand)
+        {
+            _eventClient?.Unsubscribe<InventoryAlertCommand>(
+                EventNames.InventoryAlertCommand,
+                ReceiveInventoryAlertCommand);
         }
         else
         {
-            Logger.Error(
-                $"发布 {EventNames.SendEmailCommand} 失败: [{errorMessage}]");
+            _eventClient?.Subscribe<InventoryAlertCommand>(
+                EventNames.InventoryAlertCommand,
+                ReceiveInventoryAlertCommand);
         }
+
+        return Task.CompletedTask;
     }
 
-    public async Task PublishUpdateTimeCommand()
+    public Task SubscribeOrUnsubscribeStoreStatusCommand()
     {
-        if (!CheckIfEventConnected(true)) return;
-
-        var timestamp = DateTimeOffset.Now.ToUnixTimeSeconds();
-        if (_eventClient!.Publish(EventNames.UpdateTimeCommand,
-                timestamp,
-                out var errorMessage))
+        if (!CheckIfEventConnected(true))
         {
-            Logger.Info($"发布 {EventNames.UpdateTimeCommand}: {timestamp}");
+            return Task.CompletedTask;
+        }
+
+        if (!IsSubscribeStoreStatusCommand)
+        {
+            _eventClient?.Unsubscribe<StoreStatusCommand>(
+                EventNames.StoreStatusCommand,
+                ReceiveStoreStatusCommand);
         }
         else
         {
-            Logger.Error(
-                $"发布 {EventNames.UpdateTimeCommand} 失败: [{errorMessage}]");
+            _eventClient?.Subscribe<StoreStatusCommand>(
+                EventNames.StoreStatusCommand,
+                ReceiveStoreStatusCommand);
         }
+
+        return Task.CompletedTask;
     }
 
-    public async Task QueryEmailQuery()
+    public Task SubscribeOrUnsubscribeSalesSnapshotQuery()
     {
-        if (!CheckIfEventConnected(true)) return;
+        if (!CheckIfEventConnected(true))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!IsSubscribeSalesSnapshotQuery)
+        {
+            _eventClient?.Unsubscribe<SalesSnapshotQuery>(
+                EventNames.SalesSnapshotQuery,
+                ReceiveSalesSnapshotQuery);
+        }
+        else
+        {
+            _eventClient?.Subscribe<SalesSnapshotQuery>(
+                EventNames.SalesSnapshotQuery,
+                ReceiveSalesSnapshotQuery);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task SubscribeOrUnsubscribeServiceClockQuery()
+    {
+        if (!CheckIfEventConnected(true))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!IsSubscribeServiceClockQuery)
+        {
+            _eventClient?.Unsubscribe<ServiceClockQuery>(
+                EventNames.ServiceClockQuery,
+                ReceiveServiceClockQuery);
+        }
+        else
+        {
+            _eventClient?.Subscribe<ServiceClockQuery>(
+                EventNames.ServiceClockQuery,
+                ReceiveServiceClockQuery);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task PublishInventoryAlertCommand()
+    {
+        if (!CheckIfEventConnected(true))
+        {
+            return Task.CompletedTask;
+        }
+
+        var command = RetailOperationsScenarioFactory.GenerateInventoryAlert();
+        if (_eventClient!.Publish(EventNames.InventoryAlertCommand, command, out var errorMessage))
+        {
+            Logger.Info($"发布 {EventNames.InventoryAlertCommand}：{command}");
+        }
+        else
+        {
+            Logger.Error($"发布 {EventNames.InventoryAlertCommand} 失败：[{errorMessage}]");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public Task PublishStoreStatusCommand()
+    {
+        if (!CheckIfEventConnected(true))
+        {
+            return Task.CompletedTask;
+        }
+
+        var command = RetailOperationsScenarioFactory.GenerateStoreStatus();
+        if (_eventClient!.Publish(EventNames.StoreStatusCommand, command, out var errorMessage))
+        {
+            Logger.Info($"发布 {EventNames.StoreStatusCommand}：{command}");
+        }
+        else
+        {
+            Logger.Error($"发布 {EventNames.StoreStatusCommand} 失败：[{errorMessage}]");
+        }
+
+        return Task.CompletedTask;
+    }
+
+    public async Task QuerySalesSnapshot()
+    {
+        if (!CheckIfEventConnected(true))
+        {
+            return;
+        }
 
         try
         {
-            var query = new EmailQuery { Subject = "账户" };
-            var result = await _eventClient!.QueryAsync<EmailQuery, EmailQueryResponse>(EventNames.EmailQuery,
-                query, 3000);
+            var query = new SalesSnapshotQuery
+            {
+                Region = "华东",
+                BusinessDate = DateTime.Today.ToString("yyyy-MM-dd")
+            };
+            var result = await _eventClient!.QueryAsync<SalesSnapshotQuery, SalesSnapshotQueryResponse>(
+                EventNames.SalesSnapshotQuery,
+                query,
+                3000);
+
             if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
             {
-                Logger.Info($"查询 {EventNames.EmailQuery} 结果: {result.Result}");
+                Logger.Info($"查询 {EventNames.SalesSnapshotQuery} 结果：{result.Result}");
             }
             else
             {
-                Logger.Error(
-                    $"查询 {EventNames.EmailQuery} 失败: [{result.ErrorMessage}]");
+                Logger.Error($"查询 {EventNames.SalesSnapshotQuery} 失败：[{result.ErrorMessage}]");
             }
         }
         catch (Exception ex)
         {
-            Logger.Error(
-                $"查询 {EventNames.EmailQuery} 失败: [{ex.Message}]");
+            Logger.Error($"查询 {EventNames.SalesSnapshotQuery} 失败：[{ex.Message}]");
         }
     }
 
-    public async Task QueryTimeQuery()
+    public async Task QueryServiceClock()
     {
-        if (!CheckIfEventConnected(true)) return;
+        if (!CheckIfEventConnected(true))
+        {
+            return;
+        }
 
         try
         {
-            var query = "我需要新时间";
-            var result = await _eventClient!.QueryAsync<string, string>(EventNames.TimeQuery, query, 3000);
+            var query = new ServiceClockQuery
+            {
+                ServiceName = "StoreOpsGateway"
+            };
+            var result = await _eventClient!.QueryAsync<ServiceClockQuery, ServiceClockQueryResponse>(
+                EventNames.ServiceClockQuery,
+                query,
+                3000);
+
             if (string.IsNullOrWhiteSpace(result.ErrorMessage) && result.Result != null)
             {
-                Logger.Info($"查询 {EventNames.TimeQuery} 结果: {result.Result}");
+                Logger.Info($"查询 {EventNames.ServiceClockQuery} 结果：{result.Result}");
             }
             else
             {
-                Logger.Error(
-                    $"查询 {EventNames.TimeQuery} 失败: [{result.ErrorMessage}]");
+                Logger.Error($"查询 {EventNames.ServiceClockQuery} 失败：[{result.ErrorMessage}]");
             }
         }
         catch (Exception ex)
         {
-            Logger.Error(
-                $"查询 {EventNames.TimeQuery} 失败: [{ex.Message}]");
+            Logger.Error($"查询 {EventNames.ServiceClockQuery} 失败：[{ex.Message}]");
         }
     }
 
-
-    private void ReceiveNewEmailCommand(NewEmailCommand command)
+    private void ReceiveInventoryAlertCommand(InventoryAlertCommand command)
     {
-        Logger.Info($"收到 {EventNames.SendEmailCommand}: {command}");
+        Logger.Info($"收到 {EventNames.InventoryAlertCommand}：{command}");
     }
 
-    private void ReceiveUpdateTimeCommand(long command)
+    private void ReceiveStoreStatusCommand(StoreStatusCommand command)
     {
-        Logger.Info($"收到 {EventNames.UpdateTimeCommand}: {command}");
+        Logger.Info($"收到 {EventNames.StoreStatusCommand}：{command}");
     }
 
-    private void ReceiveEmailQuery(EmailQuery request)
+    private void ReceiveSalesSnapshotQuery(SalesSnapshotQuery request)
     {
-        Logger.Info($"收到查询请求 [{EventNames.EmailQuery}]: {request}");
-        var response = new EmailQueryResponse { Emails = EmailManager.QueryEmail(request.Subject) };
-        if (_eventClient!.Publish(EventNames.EmailQuery, response,
-                out var errorMessage))
-        {
-            Logger.Info($"响应查询结果 [{EventNames.EmailQuery}]: {response}");
-        }
-        else
-        {
-            Logger.Error($"响应查询失败 [{EventNames.EmailQuery}]: {errorMessage}");
-        }
-    }
+        Logger.Info($"收到查询请求 [{EventNames.SalesSnapshotQuery}]：{request}");
 
-    private void ReceiveTimeQuery(string request)
-    {
-        Logger.Info($"收到查询请求 [{EventNames.TimeQuery}]: {request}");
-        var response = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss fff");
-        if (_eventClient!.Publish(EventNames.TimeQuery, response,
-                out var errorMessage))
+        // 直接在查询处理器里 Publish，客户端会自动回填当前查询的 QueryTaskId。
+        var response = RetailOperationsScenarioFactory.BuildSalesSnapshot(request);
+        if (_eventClient!.Publish(EventNames.SalesSnapshotQuery, response, out var errorMessage))
         {
-            Logger.Info($"响应查询结果 [{EventNames.TimeQuery}]: {response}");
+            Logger.Info($"响应查询结果 [{EventNames.SalesSnapshotQuery}]：{response}");
         }
         else
         {
-            Logger.Error($"响应查询失败 [{EventNames.TimeQuery}]: {errorMessage}");
+            Logger.Error($"响应查询失败 [{EventNames.SalesSnapshotQuery}]：{errorMessage}");
+        }
+    }
+
+    private void ReceiveServiceClockQuery(ServiceClockQuery request)
+    {
+        Logger.Info($"收到查询请求 [{EventNames.ServiceClockQuery}]：{request}");
+
+        var response = RetailOperationsScenarioFactory.BuildServiceClock(request);
+        if (_eventClient!.Publish(EventNames.ServiceClockQuery, response, out var errorMessage))
+        {
+            Logger.Info($"响应查询结果 [{EventNames.ServiceClockQuery}]：{response}");
+        }
+        else
+        {
+            Logger.Error($"响应查询失败 [{EventNames.ServiceClockQuery}]：{errorMessage}");
         }
     }
 
     private bool CheckIfEventConnected(bool showMsg = false)
     {
-        if (_eventClient is { ConnectStatus: ConnectStatus.Connected }) return true;
-        if (showMsg) Logger.Warn("发送事件前请先连接事件服务");
+        if (_eventClient is { ConnectStatus: ConnectStatus.Connected })
+        {
+            return true;
+        }
+
+        if (showMsg)
+        {
+            Logger.Warn("发送事件前请先连接事件服务。");
+        }
 
         return false;
     }

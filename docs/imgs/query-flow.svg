@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="980" height="360" viewBox="0 0 980 360" role="img" aria-labelledby="title desc">
   <title id="title">Query flow</title>
-  <desc id="desc">A requester sends RequestQuery with TaskId, the server forwards it, the responder publishes a response with QueryTaskId, and the server routes it back.</desc>
+  <desc id="desc">A requester sends RequestQuery with TaskId, the server forwards it to subscribers, the responder publishes a response with QueryTaskId, and the server routes it back only to the original requester.</desc>
   <defs>
     <style>
       .bg { fill: #f8fafc; }
@@ -44,5 +44,5 @@
   <text class="small" x="655" y="230" text-anchor="middle">3. RequestPublish(QueryTaskId = Q1, Subject, Buffer)</text>
 
   <path class="arrow2" d="M490 295 L160 295" />
-  <text class="small" x="325" y="285" text-anchor="middle">4. UpdateEvent(TaskId = Q1, IsQueryRequest = false)</text>
+  <text class="small" x="325" y="285" text-anchor="middle">4. UpdateEvent(TaskId = Q1, only requester receives)</text>
 </svg>

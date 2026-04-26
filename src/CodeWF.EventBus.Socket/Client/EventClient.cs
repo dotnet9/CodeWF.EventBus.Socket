@@ -1,5 +1,4 @@
-using System.Threading.Channels;
-using Heartbeat = CodeWF.EventBus.Socket.Models.Heartbeat;
+using CodeWF.EventBus;
 
 // ReSharper disable once CheckNamespace
 namespace CodeWF.EventBus.Socket;
@@ -10,22 +9,38 @@ public class EventClient : IEventClient
     private const int HeartbeatInterval = 5000;
     private const int MaxTrySendHeartTime = 3;
 
-    // 当前线程是否处于“处理查询请求”的上下文中。
-    // 这样响应端在查询处理器里直接调用 Publish 时，客户端就能自动带上原查询 TaskId。
+    // 当前线程是否正处于“处理查询请求”的上下文中。
+    // 这样订阅处理器内部直接调用 Publish 时，客户端就能自动带上原查询 TaskId。
     private readonly AsyncLocal<QueryResponseContext?> _queryResponseContext = new();
-    // 查询发起方本地缓存，键为查询 TaskId，值为服务端回推的最终响应。
-    private readonly ConcurrentDictionary<string, UpdateEvent?> _queryTaskIdAndResponse = new();
-    private readonly Channel<SocketCommand> _responses = Channel.CreateUnbounded<SocketCommand>();
+    // 查询发起方本地缓存，键为查询 TaskId，值为该查询专属的响应通道。
+    private readonly ConcurrentDictionary<string, Channel<UpdateEvent>> _queryResponseChannels = new();
+    // 每个主题在本地注册的处理器列表。
     private readonly ConcurrentDictionary<string, List<Delegate>> _subjectAndHandlers = new();
 
+    private readonly Func<SocketCommand, Task> _socketCommandHandler;
+    private readonly Func<TcpClientErrorCommand, Task> _clientErrorHandler;
+
+    private Channel<SocketCommand> _inboundCommands = CreateInboundCommandChannel();
+    private Channel<OutboundCommand> _outboundCommands = CreateOutboundCommandChannel();
     private CancellationTokenSource? _cancellationTokenSource;
-    private System.Net.Sockets.Socket? _client;
+    private TcpSocketClient? _client;
     private string? _host;
     private int _port;
+    // 连接建立后先做一次轻量握手，确认对端真的是事件总线服务。
+    private TaskCompletionSource<bool>? _eventServerHandshakeCompletion;
     private string? _requestIsEventServerTaskId;
     private int _trySendHeartbeatTimes;
+    private int _reconnectScheduled;
+    private bool _isSubscribedToTransportEvents;
 
     private sealed record QueryResponseContext(string Subject, string TaskId);
+    private sealed record OutboundCommand(INetObject Command, bool NeedCheckConnectStatus);
+
+    public EventClient()
+    {
+        _socketCommandHandler = HandleSocketCommandAsync;
+        _clientErrorHandler = HandleClientErrorAsync;
+    }
 
     #region interface methods
 
@@ -41,46 +56,51 @@ public class EventClient : IEventClient
         _host = host;
         _port = port;
 
+        // 每次连接或重连都重建通道和后台消费者，避免沿用已关闭的管道。
         _cancellationTokenSource = new CancellationTokenSource();
-        var ipEndPoint = new IPEndPoint(IPAddress.Parse(host), port);
         ConnectStatus = ConnectStatus.IsConnecting;
+        ResetPipelines();
+        EnsureTransportSubscriptions();
 
-        await Task.Run(async () =>
+        while (!_cancellationTokenSource.IsCancellationRequested)
         {
-            while (!_cancellationTokenSource.IsCancellationRequested)
+            try
             {
-                try
+                _client?.Stop();
+                _client = new TcpSocketClient();
+                var (isSuccess, errorMessage) = await _client.ConnectAsync(nameof(EventClient), host, port);
+                if (!isSuccess)
                 {
-                    _client = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream,
-                        ProtocolType.Tcp);
-                    await _client.ConnectAsync(ipEndPoint);
+                    throw new Exception(errorMessage ?? "连接事件总线服务失败。");
+                }
 
-                    ListenForServer();
-                    CheckResponse();
-                    CheckIsEventServer();
-                    break;
-                }
-                catch (SocketException ex)
-                {
-                    Debug.WriteLine($"TCP服务连接异常，将在 {ReconnectInterval / 1000} 秒后重新连接：{ex.Message}");
-                    await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval));
-                }
-                catch (Exception)
-                {
-                    // TODO Need to handle event services that are connected incorrectly (i.e. event services are not responding to its type correctly)
-                }
+                Interlocked.Exchange(ref _reconnectScheduled, 0);
+                await CheckIsEventServerAsync();
+                return ConnectStatus == ConnectStatus.Connected;
             }
-        }, _cancellationTokenSource.Token);
+            catch (SocketException ex)
+            {
+                Debug.WriteLine($"TCP 服务连接异常，将在 {ReconnectInterval / 1000} 秒后重新连接：{ex.Message}");
+                await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval), CancellationToken.None);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"事件服务连接异常：{ex.Message}");
+                ConnectStatus = ConnectStatus.Disconnected;
+                await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval), CancellationToken.None);
+            }
+        }
 
-        return ConnectStatus == ConnectStatus.Connected;
+        return false;
     }
 
     public void Disconnect()
     {
         try
         {
+            // 先通知后台循环退出，再关闭底层连接。
             _cancellationTokenSource?.Cancel();
-            _client?.Disconnect(false);
+            _client?.Stop();
             _client = null;
         }
         catch
@@ -90,6 +110,15 @@ public class EventClient : IEventClient
         finally
         {
             ConnectStatus = ConnectStatus.Disconnected;
+            _eventServerHandshakeCompletion?.TrySetCanceled();
+            _eventServerHandshakeCompletion = null;
+            _requestIsEventServerTaskId = null;
+            Interlocked.Exchange(ref _trySendHeartbeatTimes, 0);
+            Interlocked.Exchange(ref _reconnectScheduled, 0);
+            _inboundCommands.Writer.TryComplete();
+            _outboundCommands.Writer.TryComplete();
+            CompleteQueryChannels();
+            RemoveTransportSubscriptions();
         }
     }
 
@@ -105,10 +134,16 @@ public class EventClient : IEventClient
 
     public void Unsubscribe<T>(string subject, Action<T> eventHandler)
     {
-        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers)) return;
-        handlers.Remove(eventHandler);
+        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
+        {
+            return;
+        }
 
-        if (handlers.Count > 0) return;
+        handlers.Remove(eventHandler);
+        if (handlers.Count > 0)
+        {
+            return;
+        }
 
         _subjectAndHandlers.TryRemove(subject, out _);
         SendCommand(new RequestUnsubscribe
@@ -120,10 +155,16 @@ public class EventClient : IEventClient
 
     public void Unsubscribe<T>(string subject, Func<T, Task> asyncEventHandler)
     {
-        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers)) return;
-        handlers.Remove(asyncEventHandler);
+        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
+        {
+            return;
+        }
 
-        if (handlers.Count > 0) return;
+        handlers.Remove(asyncEventHandler);
+        if (handlers.Count > 0)
+        {
+            return;
+        }
 
         _subjectAndHandlers.TryRemove(subject, out _);
         SendCommand(new RequestUnsubscribe
@@ -138,8 +179,8 @@ public class EventClient : IEventClient
         errorMessage = string.Empty;
         try
         {
-            // 如果当前 Publish 发生在查询处理器内部，则把原查询 TaskId 透传给服务端，
-            // 让服务端把这条消息识别为“查询响应”而不是普通广播事件。
+            // 如果当前 Publish 发生在查询处理器内部，则把原查询 TaskId 透传给服务端。
+            // 这样服务端就会把它识别为查询响应，而不是普通广播事件。
             SendCommand(new RequestPublish
             {
                 TaskId = SocketHelper.GetNewTaskId(),
@@ -157,11 +198,14 @@ public class EventClient : IEventClient
         }
     }
 
-    public async Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(string subject,
-        TQuery message, int overtimeMilliseconds)
+    public async Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(
+        string subject,
+        TQuery message,
+        int overtimeMilliseconds)
     {
         var errorMessage = string.Empty;
         var taskId = SocketHelper.GetNewTaskId();
+
         try
         {
             var request = new RequestQuery
@@ -170,56 +214,38 @@ public class EventClient : IEventClient
                 Subject = subject,
                 Buffer = message.SerializeObject()
             };
-            _queryTaskIdAndResponse[request.TaskId] = default;
+            var responseChannel = Channel.CreateBounded<UpdateEvent>(new BoundedChannelOptions(1)
+            {
+                SingleReader = true,
+                SingleWriter = true,
+                // 查询语义只关心最后一条响应，理论上也只应收到一条响应。
+                FullMode = BoundedChannelFullMode.DropOldest
+            });
+
+            _queryResponseChannels[request.TaskId] = responseChannel;
             SendCommand(request);
 
-            // 用轮询配合超时控制等待响应，避免同步阻塞调用线程。
-            var tcs = new TaskCompletionSource<UpdateEvent>();
-            using var timeoutTimer = new Timer(_ => { tcs.TrySetException(new Exception("查询超时，请重试！")); }, null,
-                overtimeMilliseconds, Timeout.Infinite);
+            using var timeoutCancellation = new CancellationTokenSource(overtimeMilliseconds);
+            using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+                _cancellationTokenSource?.Token ?? CancellationToken.None,
+                timeoutCancellation.Token);
 
-            var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
-
-            while (_cancellationTokenSource is null || !_cancellationTokenSource.IsCancellationRequested)
-            {
-                if (_queryTaskIdAndResponse.TryGetValue(taskId, out var responseEvent) && responseEvent != default)
-                {
-                    timeoutTimer.Change(Timeout.Infinite, Timeout.Infinite);
-                    tcs.TrySetResult(responseEvent);
-                    break;
-                }
-
-                await Task.Delay(10, cancellationToken);
-                if (tcs.Task.IsCompleted)
-                {
-                    break;
-                }
-            }
-
-            if (!tcs.Task.IsCompleted)
-            {
-                if (_cancellationTokenSource?.IsCancellationRequested == true)
-                {
-                    tcs.TrySetException(new OperationCanceledException());
-                }
-                else
-                {
-                    timeoutTimer.Change(Timeout.Infinite, Timeout.Infinite);
-                    tcs.TrySetException(new Exception("查询超时，请重试！"));
-                }
-            }
-
-            var updateEvent = await tcs.Task;
+            var updateEvent = await responseChannel.Reader.ReadAsync(linkedCancellation.Token);
             if (updateEvent.Buffer != null)
             {
                 return ((TResponse)updateEvent.Buffer.DeserializeObject(typeof(TResponse)), string.Empty);
             }
 
-            return (default, "未从服务器收到响应");
+            return (default, "未从服务端收到响应。");
         }
         catch (OperationCanceledException)
         {
-            return (default, "操作已取消");
+            if (_cancellationTokenSource?.IsCancellationRequested == true)
+            {
+                return (default, "操作已取消。");
+            }
+
+            return (default, "查询超时，请重试。");
         }
         catch (Exception ex)
         {
@@ -229,11 +255,17 @@ public class EventClient : IEventClient
         }
         finally
         {
-            _queryTaskIdAndResponse.TryRemove(taskId, out _);
+            if (_queryResponseChannels.TryRemove(taskId, out var responseChannel))
+            {
+                responseChannel.Writer.TryComplete();
+            }
         }
     }
 
-    public TResponse? Query<TQuery, TResponse>(string subject, TQuery message, out string errorMessage,
+    public TResponse? Query<TQuery, TResponse>(
+        string subject,
+        TQuery message,
+        out string errorMessage,
         int overtimeMilliseconds = 3000)
     {
         try
@@ -274,6 +306,7 @@ public class EventClient : IEventClient
             handlers = [eventHandler];
             _subjectAndHandlers.TryAdd(subject, handlers);
 
+            // 本地首个处理器注册时，才需要通知服务端建立远程订阅关系。
             SendCommand(new RequestSubscribe
             {
                 TaskId = SocketHelper.GetNewTaskId(),
@@ -286,94 +319,68 @@ public class EventClient : IEventClient
         }
     }
 
-    private void ListenForServer()
+    private void EnsureTransportSubscriptions()
     {
-        _ = Task.Run(async () =>
+        if (_isSubscribedToTransportEvents)
         {
-            // 持续从 Socket 读取完整协议包，再交给响应分发循环统一处理。
-            while (_client != null && _cancellationTokenSource is { IsCancellationRequested: false })
-            {
-                try
-                {
-                    var (success, buffer, headInfo) = await _client.ReadPacketAsync(_cancellationTokenSource.Token);
-                    if (!success) break;
+            return;
+        }
 
-                    await _responses.Writer.WriteAsync(new SocketCommand(headInfo, buffer, _client));
-                }
-                catch (SocketException ex)
-                {
-                    Debug.WriteLine($"接收数据异常：{ex.Message}");
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"接收数据异常：{ex.Message}");
-                }
-            }
-        });
+        EventBus.Default.Subscribe(_socketCommandHandler);
+        EventBus.Default.Subscribe(_clientErrorHandler);
+        _isSubscribedToTransportEvents = true;
     }
 
-    private void CheckResponse()
+    private void RemoveTransportSubscriptions()
     {
-        _ = Task.Run(async () =>
+        if (!_isSubscribedToTransportEvents)
         {
-            // 客户端所有入站消息都先进入 Channel，再按消息类型分流，
-            // 这样能把网络读取和业务处理解耦。
-            while (_cancellationTokenSource is { IsCancellationRequested: false })
-            {
-                try
-                {
-                    var readTask = _responses.Reader.WaitToReadAsync(_cancellationTokenSource.Token);
-                    if (!await readTask) break;
-                    if (!_responses.Reader.TryRead(out var response)) continue;
+            return;
+        }
 
-                    if (response.IsMessage<ResponseCommon>())
-                    {
-                        HandleResponse(response.Message<ResponseCommon>());
-                    }
-                    else if (response.IsMessage<UpdateEvent>())
-                    {
-                        HandleResponse(response.Message<UpdateEvent>());
-                    }
-                    else if (response.IsMessage<Heartbeat>())
-                    {
-                        HandleResponse(response.Message<Heartbeat>());
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"处理响应异常：{ex.Message}");
-                }
-            }
-        });
+        EventBus.Default.Unsubscribe(_socketCommandHandler);
+        EventBus.Default.Unsubscribe(_clientErrorHandler);
+        _isSubscribedToTransportEvents = false;
+    }
+
+    private Task HandleSocketCommandAsync(SocketCommand command)
+    {
+        if (!BelongsToCurrentClient(command.Client))
+        {
+            return Task.CompletedTask;
+        }
+
+        // 传输层回调只负责入队；若连接正在关闭，直接忽略残留消息即可。
+        _inboundCommands.Writer.TryWrite(command);
+        return Task.CompletedTask;
+    }
+
+    private Task HandleClientErrorAsync(TcpClientErrorCommand error)
+    {
+        if (!ReferenceEquals(error.Client, _client))
+        {
+            return Task.CompletedTask;
+        }
+
+        ConnectStatus = ConnectStatus.Disconnected;
+        Debug.WriteLine(error.ErrorMessage);
+        return Task.CompletedTask;
     }
 
     private void SendHeartbeat()
     {
         _ = Task.Run(async () =>
         {
-            // 心跳连续失败达到阈值后，认为连接可能已失效，主动触发重连。
+            // 心跳请求也进入发送通道，避免在计时线程里直接阻塞等待网络发送。
             while (_cancellationTokenSource is { IsCancellationRequested: false })
             {
                 try
                 {
-                    if (_trySendHeartbeatTimes >= MaxTrySendHeartTime)
-                    {
-                        Reconnect();
-                        break;
-                    }
-
                     SendCommand(new Heartbeat());
                 }
-                catch (Exception)
+                catch (Exception ex)
                 {
-                    Interlocked.Increment(ref _trySendHeartbeatTimes);
-                    Debug.WriteLine(
-                        $"发送心跳异常，将尝试重新发送！({MaxTrySendHeartTime - _trySendHeartbeatTimes}/{MaxTrySendHeartTime})");
+                    Debug.WriteLine($"发送心跳入队失败：{ex.Message}");
                 }
 
                 await Task.Delay(TimeSpan.FromMilliseconds(HeartbeatInterval));
@@ -381,41 +388,132 @@ public class EventClient : IEventClient
         });
     }
 
+    private void ResetPipelines()
+    {
+        _inboundCommands = CreateInboundCommandChannel();
+        _outboundCommands = CreateOutboundCommandChannel();
+        _ = Task.Run(ProcessInboundCommandsAsync);
+        _ = Task.Run(ProcessOutboundCommandsAsync);
+    }
+
+    private async Task ProcessInboundCommandsAsync()
+    {
+        var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
+
+        try
+        {
+            await foreach (var command in _inboundCommands.Reader.ReadAllAsync(cancellationToken))
+            {
+                try
+                {
+                    if (command.IsCommand<ResponseCommon>())
+                    {
+                        HandleResponse(command.GetCommand<ResponseCommon>());
+                    }
+                    else if (command.IsCommand<UpdateEvent>())
+                    {
+                        HandleResponse(command.GetCommand<UpdateEvent>());
+                    }
+                    else if (command.IsCommand<Heartbeat>())
+                    {
+                        HandleResponse(command.GetCommand<Heartbeat>());
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Debug.WriteLine($"处理响应异常：{ex.Message}");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 断开连接时允许消费者自然退出。
+        }
+    }
+
+    private async Task ProcessOutboundCommandsAsync()
+    {
+        var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
+
+        try
+        {
+            await foreach (var command in _outboundCommands.Reader.ReadAllAsync(cancellationToken))
+            {
+                try
+                {
+                    if (command.NeedCheckConnectStatus && ConnectStatus != ConnectStatus.Connected)
+                    {
+                        continue;
+                    }
+
+                    if (_client == null)
+                    {
+                        continue;
+                    }
+
+                    await _client.SendCommandAsync(command.Command);
+                }
+                catch (Exception ex)
+                {
+                    if (command.Command is Heartbeat)
+                    {
+                        var currentRetry = Interlocked.Increment(ref _trySendHeartbeatTimes);
+                        Debug.WriteLine(
+                            $"发送心跳异常，将尝试重新发送！({MaxTrySendHeartTime - currentRetry}/{MaxTrySendHeartTime})");
+
+                        if (currentRetry >= MaxTrySendHeartTime &&
+                            Interlocked.CompareExchange(ref _reconnectScheduled, 1, 0) == 0)
+                        {
+                            _ = Task.Run(() =>
+                            {
+                                try
+                                {
+                                    Reconnect();
+                                }
+                                finally
+                                {
+                                    Interlocked.Exchange(ref _reconnectScheduled, 0);
+                                }
+                            });
+                        }
+                    }
+                    else
+                    {
+                        Debug.WriteLine($"发送命令异常：{ex.Message}");
+                        ConnectStatus = ConnectStatus.Disconnected;
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // 断开连接时允许消费者自然退出。
+        }
+    }
+
     private async Task CheckIsEventServerAsync()
     {
         _requestIsEventServerTaskId = SocketHelper.GetNewTaskId();
+        _eventServerHandshakeCompletion =
+            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
         SendCommand(new RequestIsEventServer { TaskId = _requestIsEventServerTaskId }, false);
 
         // 连接建立后先做一次轻量握手，确认对端确实是本事件总线服务，而不是普通 TCP 服务。
         var timeoutTask = Task.Delay(3000);
-        var completionTask = new TaskCompletionSource<bool>();
-
-        var checkTask = Task.Run(async () =>
-        {
-            while (_cancellationTokenSource is { IsCancellationRequested: false } &&
-                   _requestIsEventServerTaskId != null)
-            {
-                await Task.Delay(10);
-            }
-
-            completionTask.SetResult(true);
-        });
-
-        var completedTask = await Task.WhenAny(checkTask, timeoutTask);
+        var completedTask = await Task.WhenAny(_eventServerHandshakeCompletion.Task, timeoutTask);
         if (completedTask == timeoutTask)
         {
             ConnectStatus = ConnectStatus.DisconnectedNeedCheckEventServer;
             _cancellationTokenSource?.Cancel();
+            _eventServerHandshakeCompletion.TrySetCanceled();
+            _eventServerHandshakeCompletion = null;
             throw new Exception("请检查事件总线服务是否连接正确");
         }
 
+        await _eventServerHandshakeCompletion.Task;
+        _eventServerHandshakeCompletion = null;
         ConnectStatus = ConnectStatus.Connected;
         SendHeartbeat();
-    }
-
-    private void CheckIsEventServer()
-    {
-        CheckIsEventServerAsync().GetAwaiter().GetResult();
     }
 
     private void HandleResponse(ResponseCommon response)
@@ -423,18 +521,25 @@ public class EventClient : IEventClient
         if (_requestIsEventServerTaskId == response.TaskId)
         {
             _requestIsEventServerTaskId = null;
+            _eventServerHandshakeCompletion?.TrySetResult(true);
         }
     }
 
     private void HandleResponse(UpdateEvent response)
     {
-        if (_queryTaskIdAndResponse.ContainsKey(response.TaskId))
+        // 只有真正的查询响应才应该命中等待中的 QueryAsync。
+        // 如果当前消息仍是查询请求，即便 TaskId 与本地待查询映射相同，也要继续分发给订阅处理器。
+        if (!response.IsQueryRequest &&
+            _queryResponseChannels.TryGetValue(response.TaskId, out var responseChannel))
         {
-            _queryTaskIdAndResponse[response.TaskId] = response;
+            responseChannel.Writer.TryWrite(response);
             return;
         }
 
-        if (!_subjectAndHandlers.TryGetValue(response.Subject, out var handlers)) return;
+        if (!_subjectAndHandlers.TryGetValue(response.Subject, out var handlers))
+        {
+            return;
+        }
 
         foreach (var handler in handlers.ToArray())
         {
@@ -468,7 +573,7 @@ public class EventClient : IEventClient
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"发送数据异常：{ex.Message}");
+                Debug.WriteLine($"分发订阅消息异常：{ex.Message}");
             }
         }
     }
@@ -481,10 +586,47 @@ public class EventClient : IEventClient
     private void SendCommand(INetObject command, bool needCheckConnectStatus = true)
     {
         if (needCheckConnectStatus && ConnectStatus != ConnectStatus.Connected)
+        {
             throw new Exception("事件服务未连接，无法发送事件！");
+        }
 
-        var buffer = command.Serialize(DateTime.Now.ToFileTimeUtc());
-        _client?.Send(buffer);
+        if (!_outboundCommands.Writer.TryWrite(new OutboundCommand(command, needCheckConnectStatus)))
+        {
+            throw new Exception("发送通道已关闭，无法继续发送事件。");
+        }
+    }
+
+    private bool BelongsToCurrentClient(System.Net.Sockets.Socket? socket)
+    {
+        return socket?.LocalEndPoint?.ToString() == _client?.LocalEndPoint;
+    }
+
+    private void CompleteQueryChannels()
+    {
+        foreach (var responseChannel in _queryResponseChannels.Values)
+        {
+            responseChannel.Writer.TryComplete();
+        }
+
+        _queryResponseChannels.Clear();
+    }
+
+    private static Channel<SocketCommand> CreateInboundCommandChannel()
+    {
+        return Channel.CreateUnbounded<SocketCommand>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
+    }
+
+    private static Channel<OutboundCommand> CreateOutboundCommandChannel()
+    {
+        return Channel.CreateUnbounded<OutboundCommand>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false
+        });
     }
 
     private string? GetCurrentQueryTaskId(string subject)

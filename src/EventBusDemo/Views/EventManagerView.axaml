@@ -5,8 +5,12 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:prism="http://prismlibrary.com/"
         prism:ViewModelLocator.AutoWireViewModel="True"
-        mc:Ignorable="d" d:DesignWidth="350" d:DesignHeight="150"
-        Width="350" Height="150" Padding="20"
+        mc:Ignorable="d"
+        d:DesignWidth="420"
+        d:DesignHeight="180"
+        Width="420"
+        Height="180"
+        Padding="20"
         x:Class="EventBusDemo.Views.EventManagerView"
         x:DataType="vm:EventManagerViewModel"
         WindowStartupLocation="CenterScreen"
@@ -14,29 +18,31 @@
         Title="{Binding Title}">
 
     <Design.DataContext>
-        <!-- This only sets the DataContext for the previewer in an IDE,
-             to set the actual DataContext for runtime, set the DataContext property in code (look at App.axaml.cs) -->
         <vm:EventManagerViewModel />
     </Design.DataContext>
+
     <Window.Styles>
         <Style Selector="Button">
-            <Setter Property="Width" Value="120" />
+            <Setter Property="Width" Value="140" />
             <Setter Property="Height" Value="35" />
             <Setter Property="HorizontalAlignment" Value="Right" />
         </Style>
     </Window.Styles>
-    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal">
+
+    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+        <StackPanel Orientation="Horizontal" Spacing="8">
             <TextBlock Text="地址：" VerticalAlignment="Center" />
-            <TextBox Text="{Binding Address}" Width="200" />
+            <TextBox Text="{Binding Address}" Width="240" />
         </StackPanel>
-        <StackPanel Orientation="Horizontal" Margin="0 20 0 0">
-            <Button Content="新建服务器"
-                    Command="{Binding OpenEventServer}" Margin="0 0 40 0"
-                    Classes="Primary" Theme="{DynamicResource SolidButton}" />
-            <Button Content="新建客户端"
+        <StackPanel Orientation="Horizontal" Spacing="16">
+            <Button Content="启动服务端窗口"
+                    Command="{Binding OpenEventServer}"
+                    Classes="Primary"
+                    Theme="{DynamicResource SolidButton}" />
+            <Button Content="启动客户端窗口"
                     Command="{Binding OpenEventClient}"
-                    Classes="Success" Theme="{DynamicResource OutlineButton}" />
+                    Classes="Success"
+                    Theme="{DynamicResource OutlineButton}" />
         </StackPanel>
     </StackPanel>
 </Window>

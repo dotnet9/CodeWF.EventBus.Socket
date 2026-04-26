@@ -6,7 +6,7 @@ English | [简体中文](README-zh_CN.md)
 [![NuGet](https://img.shields.io/nuget/dt/CodeWF.EventBus.Socket.svg)](https://www.nuget.org/packages/CodeWF.EventBus.Socket/)
 [![License](https://img.shields.io/github/license/dotnet9/CodeWF.EventBus.Socket)](LICENSE)
 
-`CodeWF.EventBus.Socket` is a lightweight TCP event bus for C# processes. It provides Publish/Subscribe messaging and Query-style request/response over raw sockets, so local processes or lightweight services can communicate without introducing RabbitMQ, Kafka, Redis, or other external MQ infrastructure.
+`CodeWF.EventBus.Socket` is a lightweight TCP event bus for C# processes. It provides Publish/Subscribe messaging and Query-style request/response over sockets, so local processes or lightweight services can communicate without introducing RabbitMQ, Kafka, Redis, or other external MQ infrastructure.
 
 ![Command](docs/imgs/command.png)
 
@@ -14,10 +14,11 @@ English | [简体中文](README-zh_CN.md)
 
 ## Highlights
 
-- TCP socket transport based on `CodeWF.NetWeaver`
+- TCP socket transport based on `CodeWF.NetWrapper`
 - Publish/Subscribe for cross-process notifications
 - Query/response flow on the same subject
 - Query correlation by request `TaskId`, including concurrent queries on the same subject
+- Reuses `CodeWF.NetWrapper` transport objects such as `TcpSocketServer`, `TcpSocketClient`, `SocketCommand`, and `Heartbeat`
 - No external MQ dependency
 - Demo application in `src/EventBusDemo`
 
@@ -103,5 +104,7 @@ Data packets are exchanged over `TCP`.
 ## Notes
 
 - This library is designed for lightweight event distribution and IPC-style communication.
+- The transport layer is implemented with `CodeWF.NetWrapper`, and same-name transport objects are reused directly instead of being duplicated locally.
+- Event-bus-specific request/query/update packets remain defined in this project because they carry library-specific semantics.
 - Messages are kept in memory only. There is no persistence, broker-side retry queue, or delivery guarantee after a process restart.
 - For production use, consider whether you need authentication, encryption, retry, monitoring, and back-pressure around the socket transport.

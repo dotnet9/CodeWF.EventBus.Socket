@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="980" height="520" viewBox="0 0 980 520" role="img" aria-labelledby="title desc">
   <title id="title">CodeWF.EventBus.Socket architecture</title>
-  <desc id="desc">Clients connect to EventServer over TCP. The server routes publish and query messages and tracks subscriptions and pending queries.</desc>
+  <desc id="desc">Clients connect to EventServer through CodeWF.NetWrapper TCP transport. The server routes publish and query messages through inbound and outbound command channels and tracks subscriptions and pending queries.</desc>
   <defs>
     <style>
       .bg { fill: #f8fafc; }
@@ -34,10 +34,12 @@
   <text class="small" x="490" y="257" text-anchor="middle">request TaskId -&gt; requester socket</text>
 
   <rect class="box" x="375" y="302" width="230" height="64" />
-  <text class="text" x="490" y="337" text-anchor="middle">Publish Channel</text>
+  <text class="text" x="490" y="331" text-anchor="middle">Inbound Command Channel</text>
+  <text class="small" x="490" y="352" text-anchor="middle">SocketCommand -&gt; routing pipeline</text>
 
   <rect class="box" x="375" y="386" width="230" height="64" />
-  <text class="text" x="490" y="421" text-anchor="middle">Query Channel</text>
+  <text class="text" x="490" y="415" text-anchor="middle">Outbound Command Channel</text>
+  <text class="small" x="490" y="436" text-anchor="middle">INetObject -&gt; NetWrapper transport</text>
 
   <rect class="panel" x="60" y="95" width="210" height="120" />
   <text class="text" x="165" y="132" text-anchor="middle">EventClient A</text>
@@ -61,7 +63,7 @@
   <path class="muted" d="M640 145 L710 145 L710 200" />
   <path class="muted" d="M340 430 L270 430 L270 365" />
 
-  <text class="small" x="305" y="143" text-anchor="middle">TCP</text>
-  <text class="small" x="305" y="353" text-anchor="middle">TCP</text>
-  <text class="small" x="675" y="248" text-anchor="middle">TCP</text>
+  <text class="small" x="305" y="143" text-anchor="middle">NetWrapper TCP</text>
+  <text class="small" x="305" y="353" text-anchor="middle">NetWrapper TCP</text>
+  <text class="small" x="675" y="248" text-anchor="middle">NetWrapper TCP</text>
 </svg>

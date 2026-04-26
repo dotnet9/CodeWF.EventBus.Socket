@@ -6,7 +6,7 @@
 [![NuGet](https://img.shields.io/nuget/dt/CodeWF.EventBus.Socket.svg)](https://www.nuget.org/packages/CodeWF.EventBus.Socket/)
 [![License](https://img.shields.io/github/license/dotnet9/CodeWF.EventBus.Socket)](LICENSE)
 
-`CodeWF.EventBus.Socket` 是一个面向 C# 进程间通信的轻量级 TCP 事件总线库。它基于原始 Socket 提供发布订阅与 Query 式请求响应能力，让本地多进程或轻量服务之间可以通信，而不必先引入 RabbitMQ、Kafka、Redis 等外部 MQ 基础设施。
+`CodeWF.EventBus.Socket` 是一个面向 C# 进程间通信的轻量级 TCP 事件总线库。它基于 Socket 提供发布订阅与 Query 式请求响应能力，让本地多进程或轻量服务之间可以通信，而不必先引入 RabbitMQ、Kafka、Redis 等外部 MQ 基础设施。
 
 ![Command](docs/imgs/command.png)
 
@@ -14,10 +14,11 @@
 
 ## 特性
 
-- 基于 `CodeWF.NetWeaver` 的 TCP Socket 传输
+- 基于 `CodeWF.NetWrapper` 的 TCP Socket 传输
 - 支持 Publish/Subscribe 跨进程事件通知
 - 支持同一主题下的 Query/Response 交互
 - 查询请求按 `TaskId` 关联，支持同主题并发查询
+- 直接复用 `CodeWF.NetWrapper` 的 `TcpSocketServer`、`TcpSocketClient`、`SocketCommand`、`Heartbeat`
 - 不依赖第三方 MQ
 - 自带示例工程 `src/EventBusDemo`
 
@@ -103,5 +104,7 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 ## 说明
 
 - 这个库适合轻量级事件分发和进程间通信场景。
+- 底层传输由 `CodeWF.NetWrapper` 实现，同名传输对象直接复用包内定义，而不是在本项目重复维护。
+- 事件总线层自己的请求、查询和推送协议对象仍保留在本项目中，因为它们承载的是本库特有的语义。
 - 当前消息仅保存在内存中，不提供持久化、重试队列或进程重启后的投递保证。
 - 如果用于生产环境，请按实际需要补充认证、加密、监控、限流与重试策略。

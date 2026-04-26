@@ -18,7 +18,7 @@ public class EventServerViewModel : ViewModelBase
     public EventServerViewModel(ApplicationConfig config)
     {
         Address = config.GetHost();
-        Title = "EventBus服务器";
+        Title = "EventBus服务端";
     }
 
     public bool IsRunning
@@ -52,55 +52,48 @@ public class EventServerViewModel : ViewModelBase
         }
     }
 
-    public bool CanStartServer
-    {
-        get => !IsRunning && !IsStarting;
-    }
+    public bool CanStartServer => !IsRunning && !IsStarting;
 
-    public bool CanStopServer
-    {
-        get => IsRunning && !IsStopping;
-    }
+    public bool CanStopServer => IsRunning && !IsStopping;
 
-    public string ServerStatusText
-    {
-        get => IsRunning ? "运行中" : "已停止";
-    }
+    public string ServerStatusText => IsRunning ? "运行中" : "已停止";
 
-    public string ServerStatusColor
-    {
-        get => IsRunning ? "#22c55e" : "#ef4444";
-    }
+    public string ServerStatusColor => IsRunning ? "#22c55e" : "#ef4444";
 
-    public DelegateCommand RunServerCommand => new DelegateCommand(async () => await RunServerAsync());
-    public DelegateCommand StopCommand => new DelegateCommand(Stop);
+    public DelegateCommand RunServerCommand => new(async () => await RunServerAsync());
+    public DelegateCommand StopCommand => new(Stop);
 
     public async Task RunServerAsync()
     {
         if (_eventServer != null && IsRunning)
         {
-            Logger.Info("事件服务已启动！");
+            Logger.Info("事件服务已启动。");
             return;
         }
 
         IsStarting = true;
-        this.RaisePropertyChanged("ServerStatusText");
-        this.RaisePropertyChanged("ServerStatusColor");
+        this.RaisePropertyChanged(nameof(ServerStatusText));
+        this.RaisePropertyChanged(nameof(ServerStatusColor));
 
         try
         {
             _eventServer ??= new EventServer();
 
-            var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-            await _eventServer.StartAsync(addressArray[0], int.Parse(addressArray[1]));
+            if (!EventBusAddressParser.TryParse(Address, out var host, out var port))
+            {
+                Logger.Warn("事件服务地址格式无效，请使用 host:port、[::1]:port 或 tcp://host:port，例如 127.0.0.1:5329");
+                return;
+            }
+
+            await _eventServer.StartAsync(host, port);
             IsRunning = _eventServer.ConnectStatus == ConnectStatus.Connected;
             if (IsRunning)
             {
-                Logger.Info("事件服务已启动！");
+                Logger.Info("事件服务启动成功。");
             }
             else
             {
-                Logger.Warn("事件服务启动中，请稍后查看状态。");
+                Logger.Warn("事件服务正在启动中，请稍后查看状态。");
             }
         }
         catch (Exception ex)
@@ -110,30 +103,28 @@ public class EventServerViewModel : ViewModelBase
         finally
         {
             IsStarting = false;
-            this.RaisePropertyChanged("ServerStatusText");
-            this.RaisePropertyChanged("ServerStatusColor");
+            this.RaisePropertyChanged(nameof(ServerStatusText));
+            this.RaisePropertyChanged(nameof(ServerStatusColor));
         }
     }
-
-
 
     public void Stop()
     {
         if (_eventServer == null || !IsRunning)
         {
-            Logger.Info("事件服务未运行！");
+            Logger.Info("事件服务未运行。");
             return;
         }
 
         IsStopping = true;
-        this.RaisePropertyChanged("ServerStatusText");
-        this.RaisePropertyChanged("ServerStatusColor");
+        this.RaisePropertyChanged(nameof(ServerStatusText));
+        this.RaisePropertyChanged(nameof(ServerStatusColor));
 
         try
         {
             _eventServer.Stop();
             IsRunning = false;
-            Logger.Info("事件服务已停止！");
+            Logger.Info("事件服务已停止。");
         }
         catch (Exception ex)
         {
@@ -142,8 +133,8 @@ public class EventServerViewModel : ViewModelBase
         finally
         {
             IsStopping = false;
-            this.RaisePropertyChanged("ServerStatusText");
-            this.RaisePropertyChanged("ServerStatusColor");
+            this.RaisePropertyChanged(nameof(ServerStatusText));
+            this.RaisePropertyChanged(nameof(ServerStatusColor));
         }
     }
 }

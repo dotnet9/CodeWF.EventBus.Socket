@@ -2,7 +2,7 @@
 
 ## 概述
 
-`CodeWF.EventBus.Socket` 是一个基于原始 TCP Socket 的轻量级事件总线库，目标是让跨进程事件通信保持简单：
+`CodeWF.EventBus.Socket` 是一个构建在 `CodeWF.NetWrapper` 之上的轻量级事件总线库，目标是让跨进程事件通信保持简单：
 
 - 使用一个小型服务端负责消息路由
 - 客户端可以按主题订阅并发布事件
@@ -19,8 +19,8 @@
 | --- | --- |
 | `EventServer` | 接收客户端连接、维护订阅关系、转发发布消息、保存待响应查询映射 |
 | `EventClient` | 管理连接、注册本地处理器、发送心跳、发起发布与查询、分发响应 |
-| `CodeWF.NetWeaver` | 负责自定义包体和二进制负载序列化 |
-| `Channel<T>` | 为客户端和服务端后台循环提供内存队列 |
+| `CodeWF.NetWrapper` | 提供 `TcpSocketServer`、`TcpSocketClient`、传输层事件派发以及共享传输对象 |
+| `CodeWF.NetWeaver` | 负责本项目和 `CodeWF.NetWrapper` 共用的协议序列化 |
 
 ## 消息类型
 
@@ -32,7 +32,13 @@
 | `RequestQuery` | 发起查询 | `TaskId`, `Subject`, `Buffer` |
 | `UpdateEvent` | 服务端推送事件或查询 | `TaskId`, `Subject`, `IsQueryRequest`, `Buffer` |
 | `ResponseCommon` | 通用服务端确认消息 | `TaskId`, `Status`, `Message` |
-| `Heartbeat` | 保活心跳 | 心跳包体 |
+| `CodeWF.NetWrapper.Commands.SocketCommand` | `NetWrapper` 派发出的传输层命令对象 | `Client`, `HeadInfo` |
+| `CodeWF.NetWrapper.Models.Heartbeat` | 直接复用的心跳包 | `TaskId` |
+
+### 复用对象与自定义对象
+
+- 直接复用 `CodeWF.NetWrapper`：`TcpSocketServer`、`TcpSocketClient`、`SocketCommand`、`Heartbeat`
+- 仍保留在本项目中的事件总线协议对象：`RequestSubscribe`、`RequestUnsubscribe`、`RequestPublish`、`RequestQuery`、`UpdateEvent`、`ResponseCommon`
 
 ## 发布订阅流程
 
@@ -61,8 +67,8 @@
 
 ### 连接模型
 
-- `EventServer` 监听 TCP 端口并接受多个客户端连接。
-- `EventClient` 建立连接后会启动响应监听和心跳发送循环。
+- `EventServer` 基于 `TcpSocketServer` 运行，并通过 `CodeWF.EventBus.Default` 接收入站命令。
+- `EventClient` 基于 `TcpSocketClient` 运行，并通过同一个传输事件总线接收服务端响应。
 - 心跳连续失败超过阈值后，客户端会尝试重连。
 
 ### 投递模型

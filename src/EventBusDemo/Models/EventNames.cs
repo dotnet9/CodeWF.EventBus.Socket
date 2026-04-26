@@ -1,9 +1,9 @@
-﻿namespace EventBusDemo.Models;
+namespace EventBusDemo.Models;
 
-public class EventNames
+public static class EventNames
 {
-    public const string SendEmailCommand = nameof(SendEmailCommand);
-    public const string UpdateTimeCommand = nameof(UpdateTimeCommand);
-    public const string EmailQuery = nameof(EmailQuery);
-    public const string TimeQuery = nameof(TimeQuery);
+    public const string InventoryAlertCommand = nameof(InventoryAlertCommand);
+    public const string StoreStatusCommand = nameof(StoreStatusCommand);
+    public const string SalesSnapshotQuery = nameof(SalesSnapshotQuery);
+    public const string ServiceClockQuery = nameof(ServiceClockQuery);
 }

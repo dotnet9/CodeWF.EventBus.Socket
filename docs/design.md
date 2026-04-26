@@ -2,7 +2,7 @@
 
 ## Overview
 
-`CodeWF.EventBus.Socket` is a lightweight event bus library built on raw TCP sockets. Its goal is to keep cross-process event delivery simple:
+`CodeWF.EventBus.Socket` is a lightweight event bus library built on top of `CodeWF.NetWrapper`. Its goal is to keep cross-process event delivery simple:
 
 - one small server process routes messages
 - clients can subscribe to subjects and publish events
@@ -19,8 +19,8 @@
 | --- | --- |
 | `EventServer` | Accepts socket clients, tracks subscriptions, routes publishes, and maps pending queries to original requesters |
 | `EventClient` | Manages socket connection, local handlers, heartbeat, publish/query calls, and response dispatch |
-| `CodeWF.NetWeaver` | Serializes custom packet types and binary payloads |
-| `Channel<T>` | Buffers publish/query work inside client and server background loops |
+| `CodeWF.NetWrapper` | Provides `TcpSocketServer`, `TcpSocketClient`, transport event dispatch, and shared transport objects |
+| `CodeWF.NetWeaver` | Serializes custom packet types and binary payloads used by both this project and `CodeWF.NetWrapper` |
 
 ## Message Types
 
@@ -32,7 +32,13 @@
 | `RequestQuery` | Send a query request | `TaskId`, `Subject`, `Buffer` |
 | `UpdateEvent` | Push an event/query to clients | `TaskId`, `Subject`, `IsQueryRequest`, `Buffer` |
 | `ResponseCommon` | Common server acknowledgement | `TaskId`, `Status`, `Message` |
-| `Heartbeat` | Keep the connection alive | protocol heartbeat payload |
+| `CodeWF.NetWrapper.Commands.SocketCommand` | Transport event raised by `NetWrapper` | `Client`, `HeadInfo` |
+| `CodeWF.NetWrapper.Models.Heartbeat` | Shared heartbeat packet reused from `NetWrapper` | `TaskId` |
+
+### Reused vs custom objects
+
+- Reused directly from `CodeWF.NetWrapper`: `TcpSocketServer`, `TcpSocketClient`, `SocketCommand`, `Heartbeat`
+- Kept in this project for event-bus protocol semantics: `RequestSubscribe`, `RequestUnsubscribe`, `RequestPublish`, `RequestQuery`, `UpdateEvent`, `ResponseCommon`
 
 ## Publish/Subscribe Flow
 
@@ -61,8 +67,8 @@ The original design used only the subject to match a response to a pending query
 
 ### Connection model
 
-- `EventServer` listens on a TCP endpoint and accepts multiple clients.
-- `EventClient` connects once and starts background loops for reading responses and sending heartbeats.
+- `EventServer` is built on `TcpSocketServer` and receives inbound packets through `CodeWF.EventBus.Default`.
+- `EventClient` is built on `TcpSocketClient` and receives server responses through the same transport event bus.
 - If heartbeat retries exceed the threshold, the client attempts to reconnect.
 
 ### Delivery model
