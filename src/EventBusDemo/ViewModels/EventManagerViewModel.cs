@@ -25,6 +25,6 @@ public class EventManagerViewModel : ViewModelBase
     private void OpenNewExe(bool isServer)
     {
         var exePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "EventBusDemo.exe");
-        Process.Start(exePath, ["-type", isServer ? "server" : "client", "-address", Address]);
+        Process.Start(exePath, ["-type", isServer ? "server" : "client", "-address", Address ?? "127.0.0.1:5329"]);
     }
 }

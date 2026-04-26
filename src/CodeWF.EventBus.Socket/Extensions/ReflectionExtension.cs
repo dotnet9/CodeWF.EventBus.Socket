@@ -1,8 +1,11 @@
-﻿namespace CodeWF.EventBus.Socket.Extensions;
+using System.Diagnostics.CodeAnalysis;
+
+namespace CodeWF.EventBus.Socket.Extensions;
 
 public static class ReflectionExtension
 {
-    public static T Property<T>(this object obj, string propertyName, T defaultValue = default)
+    [return: MaybeNull]
+    public static T Property<T>(this object obj, string propertyName, [AllowNull] T defaultValue = default!)
     {
         if (obj == null) throw new ArgumentNullException(nameof(obj));
         if (string.IsNullOrEmpty(propertyName)) throw new ArgumentNullException(nameof(propertyName));
@@ -11,12 +14,16 @@ public static class ReflectionExtension
         if (propertyInfo == null) return defaultValue;
 
         var value = propertyInfo.GetValue(obj);
+        if (value == null) return defaultValue;
+
+        if (value is T typedValue) return typedValue;
 
         try
         {
-            return (T)Convert.ChangeType(value, typeof(T));
+            var targetType = Nullable.GetUnderlyingType(typeof(T)) ?? typeof(T);
+            return (T)Convert.ChangeType(value, targetType);
         }
-        catch (InvalidCastException)
+        catch
         {
             return defaultValue;
         }

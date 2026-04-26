@@ -7,5 +7,7 @@ internal class UpdateEvent : INetObject
 
     public string Subject { get; set; } = null!;
 
+    public bool IsQueryRequest { get; set; }
+
     public byte[]? Buffer { get; set; }
 }

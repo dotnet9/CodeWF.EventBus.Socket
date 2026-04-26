@@ -7,5 +7,7 @@ internal class RequestPublish : INetObject
 
     public string Subject { get; set; } = null!;
 
+    public string? QueryTaskId { get; set; }
+
     public byte[]? Buffer { get; set; }
 }

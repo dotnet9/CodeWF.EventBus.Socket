@@ -122,9 +122,16 @@ public class EventClientViewModel : ViewModelBase
         try
         {
             var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
-            await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
-            ConnectStatus = ConnectStatus.Connected;
-            Logger.Info("事件服务已连接！");
+            var connected = await _eventClient.ConnectAsync(addressArray[0], int.Parse(addressArray[1]));
+            ConnectStatus = _eventClient.ConnectStatus;
+            if (connected)
+            {
+                Logger.Info("事件服务已连接！");
+            }
+            else
+            {
+                Logger.Warn("事件服务连接未完成，请检查服务状态后重试。");
+            }
         }
         catch (Exception ex)
         {

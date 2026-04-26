@@ -93,8 +93,15 @@ public class EventServerViewModel : ViewModelBase
 
             var addressArray = Address!.Split(new[] { ':' }, StringSplitOptions.RemoveEmptyEntries);
             await _eventServer.StartAsync(addressArray[0], int.Parse(addressArray[1]));
-            IsRunning = true;
-            Logger.Info("事件服务已启动！");
+            IsRunning = _eventServer.ConnectStatus == ConnectStatus.Connected;
+            if (IsRunning)
+            {
+                Logger.Info("事件服务已启动！");
+            }
+            else
+            {
+                Logger.Warn("事件服务启动中，请稍后查看状态。");
+            }
         }
         catch (Exception ex)
         {

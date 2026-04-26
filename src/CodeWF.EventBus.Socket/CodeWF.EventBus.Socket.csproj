@@ -16,13 +16,12 @@
 		<PackageTags>c#,eventbus,socket</PackageTags>
 		<PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
 		<RepositoryType>git</RepositoryType>
-		<PackageLicenseExpression>MIT</PackageLicenseExpression>
 		<Copyright>https://codewf.com</Copyright>
-		<PackageReadmeFile>README.MD</PackageReadmeFile>
+		<PackageReadmeFile>README.md</PackageReadmeFile>
 	</PropertyGroup>
 	<ItemGroup>
 		<!-- The nuget package icon -->
-		<None Include="..\..\README.MD" Pack="true" PackagePath="" />
+		<None Include="..\..\README.md" Pack="true" PackagePath="" />
 		<None Include="..\..\logo.png" Pack="true" PackagePath="" />
 	</ItemGroup>
 	<ItemGroup>

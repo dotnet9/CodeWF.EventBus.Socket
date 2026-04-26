@@ -1,7 +1,6 @@
 using System.Threading.Channels;
 
 // ReSharper disable once CheckNamespace
-
 namespace CodeWF.EventBus.Socket;
 
 public class EventServer : IEventServer
@@ -10,25 +9,122 @@ public class EventServer : IEventServer
 
     private readonly Channel<RequestPublish> _needPublishEvents = Channel.CreateUnbounded<RequestPublish>();
     private readonly Channel<RequestQuery> _needQueryEvents = Channel.CreateUnbounded<RequestQuery>();
-    private readonly Channel<RequestPublish> _needResponseQueryEvents = Channel.CreateUnbounded<RequestPublish>();
-
-    private readonly ConcurrentDictionary<string, System.Net.Sockets.Socket>
-        _querySubjectAndClients = new();
-
-    private readonly ConcurrentDictionary<string, RequestQuery> _querySubjectAndQueries = new();
-
-    private readonly ConcurrentDictionary<string, List<System.Net.Sockets.Socket>>
-        _subscribedSubjectAndClients = new();
-
+    // 待响应查询表：键为请求 TaskId，值为原始请求方连接。
+    // 响应端回包时，服务端据此把结果定向返回给真正的请求方。
+    private readonly ConcurrentDictionary<string, PendingQuery> _pendingQueries = new();
+    private readonly ConcurrentDictionary<string, List<System.Net.Sockets.Socket>> _subscribedSubjectAndClients = new();
 
     private CancellationTokenSource? _cancellationTokenSource;
     private System.Net.Sockets.Socket? _server;
 
+    private sealed record PendingQuery(string Subject, System.Net.Sockets.Socket Client);
+
+    #region interface methods
+
+    public ConnectStatus ConnectStatus { get; private set; }
+
+    public void Start(string? host, int port)
+    {
+        ConnectStatus = ConnectStatus.IsConnecting;
+        _cancellationTokenSource = new CancellationTokenSource();
+        var ipEndPoint = CreateEndPoint(host, port);
+
+        _ = Task.Run(async () =>
+        {
+            while (!_cancellationTokenSource.IsCancellationRequested)
+            {
+                try
+                {
+                    _server = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream,
+                        ProtocolType.Tcp);
+                    _server.Bind(ipEndPoint);
+                    _server.Listen(10);
+
+                    ListenForClients();
+                    ListenPublish();
+                    ListenQuery();
+                    ConnectStatus = ConnectStatus.Connected;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    ConnectStatus = ConnectStatus.Disconnected;
+                    Debug.WriteLine($"TCP服务启动异常，将在 {RestartInterval / 1000} 秒后重启：{ex.Message}");
+                    await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
+                }
+            }
+        }, _cancellationTokenSource.Token);
+    }
+
+    public Task StartAsync(string? host, int port, CancellationTokenSource? cancellationToken = null)
+    {
+        ConnectStatus = ConnectStatus.IsConnecting;
+        _cancellationTokenSource = cancellationToken ?? new CancellationTokenSource();
+        var ipEndPoint = CreateEndPoint(host, port);
+
+        return Task.Run(async () =>
+        {
+            while (!_cancellationTokenSource.IsCancellationRequested)
+            {
+                try
+                {
+                    _server = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream,
+                        ProtocolType.Tcp);
+                    _server.Bind(ipEndPoint);
+                    _server.Listen(10);
+
+                    ListenForClients();
+                    ListenPublish();
+                    ListenQuery();
+                    ConnectStatus = ConnectStatus.Connected;
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    ConnectStatus = ConnectStatus.Disconnected;
+                    Debug.WriteLine(
+                        $"TCP service startup exception, will restart in {RestartInterval / 1000} seconds：{ex.Message}");
+                    await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
+                }
+            }
+        }, _cancellationTokenSource.Token);
+    }
+
+    public void Stop()
+    {
+        try
+        {
+            _cancellationTokenSource?.Cancel();
+            _server?.Dispose();
+            _server = null;
+        }
+        catch
+        {
+            // ignored
+        }
+        finally
+        {
+            ConnectStatus = ConnectStatus.Disconnected;
+        }
+    }
+
+    #endregion
+
+    #region private methods
+
+    private static IPEndPoint CreateEndPoint(string? host, int port)
+    {
+        return string.IsNullOrWhiteSpace(host)
+            ? new IPEndPoint(IPAddress.Any, port)
+            : new IPEndPoint(IPAddress.Parse(host), port);
+    }
+
     private void ListenForClients()
     {
-        Task.Factory.StartNew(async () =>
+        _ = Task.Run(async () =>
         {
             while (_cancellationTokenSource?.IsCancellationRequested == false)
+            {
                 try
                 {
                     var socketClient = await _server!.AcceptAsync();
@@ -38,14 +134,17 @@ public class EventServer : IEventServer
                 {
                     Debug.WriteLine($"处理客户端连接上线异常：{ex.Message}");
                 }
+            }
         });
     }
 
     private void ListenPublish()
     {
-        Task.Factory.StartNew(async () =>
+        _ = Task.Run(async () =>
         {
+            // 普通发布事件走广播通道，查询响应不会进入这里。
             while (_cancellationTokenSource?.IsCancellationRequested == false)
+            {
                 try
                 {
                     if (!_needPublishEvents.Reader.TryRead(out var @event))
@@ -61,6 +160,8 @@ public class EventServer : IEventServer
                     {
                         TaskId = @event.TaskId,
                         Subject = @event.Subject,
+                        // 普通发布只需要广播给订阅者，不应触发查询响应逻辑。
+                        IsQueryRequest = false,
                         Buffer = @event.Buffer
                     };
 
@@ -71,7 +172,7 @@ public class EventServer : IEventServer
                         {
                             SendCommand(client, updateEvent);
                         }
-                        catch (SocketException ex)
+                        catch (SocketException)
                         {
                             RemoveClient(client);
                         }
@@ -89,16 +190,17 @@ public class EventServer : IEventServer
                 {
                     Debug.WriteLine($"处理发布异常：{ex.Message}");
                 }
-
-            await Task.CompletedTask;
+            }
         });
     }
 
     private void ListenQuery()
     {
-        Task.Factory.StartNew(async () =>
+        _ = Task.Run(async () =>
         {
+            // 查询请求会被转发给同主题订阅者，但保留原 TaskId，后续靠它做响应关联。
             while (_cancellationTokenSource?.IsCancellationRequested == false)
+            {
                 try
                 {
                     if (!_needQueryEvents.Reader.TryRead(out var query))
@@ -112,8 +214,10 @@ public class EventServer : IEventServer
 
                     var updateEvent = new UpdateEvent
                     {
-                        TaskId = SocketHelper.GetNewTaskId(),
+                        TaskId = query.TaskId,
                         Subject = query.Subject,
+                        // 客户端据此知道当前正在处理“查询请求”，后续 Publish 需要回填 QueryTaskId。
+                        IsQueryRequest = true,
                         Buffer = query.Buffer
                     };
 
@@ -124,7 +228,7 @@ public class EventServer : IEventServer
                         {
                             SendCommand(client, updateEvent);
                         }
-                        catch (SocketException ex)
+                        catch (SocketException)
                         {
                             RemoveClient(client);
                         }
@@ -142,72 +246,16 @@ public class EventServer : IEventServer
                 {
                     Debug.WriteLine($"处理查询异常：{ex.Message}");
                 }
-
-            await Task.CompletedTask;
-        });
-    }
-
-    private void ListenResponseQuery()
-    {
-        Task.Factory.StartNew(async () =>
-        {
-            while (_cancellationTokenSource?.IsCancellationRequested == false)
-                try
-                {
-                    if (!_needResponseQueryEvents.Reader.TryRead(out var response))
-                    {
-                        var readTask = _needResponseQueryEvents.Reader.WaitToReadAsync(_cancellationTokenSource.Token);
-                        if (!await readTask) break;
-                        if (!_needResponseQueryEvents.Reader.TryRead(out response)) continue;
-                    }
-
-                    if (!_querySubjectAndClients.TryGetValue(response.Subject, out var client)
-                        || !_querySubjectAndQueries.TryGetValue(response.Subject, out var query))
-                        continue;
-
-                    var updateEvent = new UpdateEvent
-                    {
-                        TaskId = query!.TaskId,
-                        Subject = response.Subject,
-                        Buffer = response.Buffer
-                    };
-
-                    try
-                    {
-                        SendCommand(client!, updateEvent);
-                    }
-                    catch (SocketException ex)
-                    {
-                        RemoveClient(client!);
-                    }
-                    catch (Exception ex)
-                    {
-                        Debug.WriteLine($"处理查询响应异常：{ex.Message}");
-                    }
-                    finally
-                    {
-                        _querySubjectAndClients.TryRemove(response.Subject, out _);
-                        _querySubjectAndQueries.TryRemove(response.Subject, out _);
-                    }
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"处理查询响应异常：{ex.Message}");
-                }
-
-            await Task.CompletedTask;
+            }
         });
     }
 
     private void HandleClient(System.Net.Sockets.Socket tcpClient)
     {
-        Task.Factory.StartNew(async () =>
+        _ = Task.Run(async () =>
         {
             while (_cancellationTokenSource?.IsCancellationRequested == false)
+            {
                 try
                 {
                     var (success, buffer, headInfo) = await tcpClient.ReadPacketAsync(_cancellationTokenSource.Token);
@@ -236,15 +284,22 @@ public class EventServer : IEventServer
                 {
                     Debug.WriteLine($"接收数据异常：{ex.Message}");
                 }
-
-            await Task.CompletedTask;
+            }
         });
     }
 
     private void RemoveClient(System.Net.Sockets.Socket tcpClient)
     {
-        var key = tcpClient.RemoteEndPoint!.ToString()!;
-        foreach (var subject in _subscribedSubjectAndClients) subject.Value.Remove(tcpClient);
+        // 连接失效时，同时清理订阅关系和该连接尚未完成的查询，避免留下悬挂映射。
+        foreach (var subject in _subscribedSubjectAndClients)
+        {
+            subject.Value.Remove(tcpClient);
+        }
+
+        foreach (var pendingQuery in _pendingQueries.Where(x => x.Value.Client == tcpClient).ToArray())
+        {
+            _pendingQueries.TryRemove(pendingQuery.Key, out _);
+        }
     }
 
     private void HandleRequest(System.Net.Sockets.Socket tcpClient, RequestIsEventServer command)
@@ -272,11 +327,10 @@ public class EventServer : IEventServer
                 sockets = [client];
                 _subscribedSubjectAndClients.TryAdd(command.Subject, sockets);
             }
-            else // if (!sockets.Contains(client))
+            else
             {
                 sockets.Add(client);
             }
-
 
             SendCommand(client, new ResponseCommon
             {
@@ -294,7 +348,10 @@ public class EventServer : IEventServer
     {
         try
         {
-            if (_subscribedSubjectAndClients.TryGetValue(command.Subject, out var sockets)) sockets.Remove(client);
+            if (_subscribedSubjectAndClients.TryGetValue(command.Subject, out var sockets))
+            {
+                sockets.Remove(client);
+            }
 
             SendCommand(client, new ResponseCommon
             {
@@ -312,13 +369,14 @@ public class EventServer : IEventServer
     {
         try
         {
-            if (_querySubjectAndClients.TryGetValue(command.Subject, out _))
+            if (!string.IsNullOrWhiteSpace(command.QueryTaskId))
             {
-                _needResponseQueryEvents.Writer.WriteAsync(command);
+                // 带 QueryTaskId 的 Publish 不是普通广播，而是某个查询的定向响应。
+                HandleQueryResponse(client, command);
                 return;
             }
 
-            _needPublishEvents.Writer.WriteAsync(command);
+            _needPublishEvents.Writer.TryWrite(command);
 
             SendCommand(client, new ResponseCommon
             {
@@ -336,9 +394,9 @@ public class EventServer : IEventServer
     {
         try
         {
-            _querySubjectAndClients[query.Subject] = client;
-            _querySubjectAndQueries[query.Subject] = query;
-            _needQueryEvents.Writer.WriteAsync(query);
+            // 先记住查询是谁发起的，再把请求转给订阅者。
+            _pendingQueries[query.TaskId] = new PendingQuery(query.Subject, client);
+            _needQueryEvents.Writer.TryWrite(query);
         }
         catch (Exception ex)
         {
@@ -358,102 +416,52 @@ public class EventServer : IEventServer
         }
     }
 
+    private void HandleQueryResponse(System.Net.Sockets.Socket responder, RequestPublish response)
+    {
+        if (string.IsNullOrWhiteSpace(response.QueryTaskId))
+        {
+            return;
+        }
+
+        if (!_pendingQueries.TryRemove(response.QueryTaskId, out var pendingQuery))
+        {
+            // 查询已超时、已返回或请求方已断开时，忽略迟到响应，避免误广播。
+            Debug.WriteLine($"收到已过期或重复的查询响应：{response.QueryTaskId}");
+            return;
+        }
+
+        try
+        {
+            var updateEvent = new UpdateEvent
+            {
+                TaskId = response.QueryTaskId,
+                Subject = pendingQuery.Subject,
+                IsQueryRequest = false,
+                Buffer = response.Buffer
+            };
+
+            // 查询结果只回给原请求方，不广播给所有订阅者。
+            SendCommand(pendingQuery.Client, updateEvent);
+            SendCommand(responder, new ResponseCommon
+            {
+                TaskId = response.TaskId,
+                Status = (byte)ResponseCommonStatus.Success
+            });
+        }
+        catch (SocketException)
+        {
+            RemoveClient(pendingQuery.Client);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"处理查询响应异常：{ex.Message}");
+        }
+    }
+
     private void SendCommand(System.Net.Sockets.Socket client, INetObject command)
     {
         var buffer = command.Serialize(DateTime.Now.ToFileTimeUtc());
         client.Send(buffer);
-    }
-
-    #region interface methods
-
-    public ConnectStatus ConnectStatus { get; private set; }
-
-    public void Start(string? host, int port)
-    {
-        ConnectStatus = ConnectStatus.IsConnecting;
-        _cancellationTokenSource = new CancellationTokenSource();
-        var ipEndPort = string.IsNullOrWhiteSpace(host)
-            ? new IPEndPoint(IPAddress.Any, port)
-            : new IPEndPoint(IPAddress.Parse(host), port);
-
-        Task.Factory.StartNew(async () =>
-        {
-            while (!_cancellationTokenSource.IsCancellationRequested)
-                try
-                {
-                    _server = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream,
-                        ProtocolType.Tcp);
-                    _server.Bind(ipEndPort);
-                    _server.Listen(10);
-
-                    ListenForClients();
-                    ListenPublish();
-                    ListenQuery();
-                    ListenResponseQuery();
-                    ConnectStatus = ConnectStatus.Connected;
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    ConnectStatus = ConnectStatus.Disconnected;
-                    Debug.WriteLine(
-                        $"TCP服务启动异常，将在 {RestartInterval / 1000} 秒后重启：{ex.Message}");
-                    await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
-                }
-        }, _cancellationTokenSource.Token);
-    }
-
-    public Task StartAsync(string? host, int port, CancellationTokenSource? cancellationToken = null)
-    {
-        ConnectStatus = ConnectStatus.IsConnecting;
-        _cancellationTokenSource = cancellationToken ?? new CancellationTokenSource();
-        var ipEndPort = string.IsNullOrWhiteSpace(host)
-            ? new IPEndPoint(IPAddress.Any, port)
-            : new IPEndPoint(IPAddress.Parse(host), port);
-
-        return Task.Factory.StartNew(async () =>
-        {
-            while (!_cancellationTokenSource.IsCancellationRequested)
-                try
-                {
-                    _server = new System.Net.Sockets.Socket(AddressFamily.InterNetwork, SocketType.Stream,
-                        ProtocolType.Tcp);
-                    _server.Bind(ipEndPort);
-                    _server.Listen(10);
-
-                    ListenForClients();
-                    ListenPublish();
-                    ListenQuery();
-                    ListenResponseQuery();
-                    ConnectStatus = ConnectStatus.Connected;
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    ConnectStatus = ConnectStatus.Disconnected;
-                    Debug.WriteLine(
-                        $"TCP service startup exception, will restart in {RestartInterval / 1000} seconds：{ex.Message}");
-                    await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
-                }
-        }, _cancellationTokenSource.Token);
-    }
-
-    public void Stop()
-    {
-        try
-        {
-            _cancellationTokenSource?.Cancel();
-            _server?.Dispose();
-            _server = null;
-        }
-        catch
-        {
-            // ignored
-        }
-        finally
-        {
-            ConnectStatus = ConnectStatus.Disconnected;
-        }
     }
 
     #endregion
