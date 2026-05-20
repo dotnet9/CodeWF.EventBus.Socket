@@ -233,7 +233,10 @@ public class EventClient : IEventClient
             var updateEvent = await responseChannel.Reader.ReadAsync(linkedCancellation.Token);
             if (updateEvent.Buffer != null)
             {
-                return ((TResponse)updateEvent.Buffer.DeserializeObject(typeof(TResponse)), string.Empty);
+                var response = updateEvent.Buffer.DeserializeObject(typeof(TResponse));
+                return response is TResponse typedResponse
+                    ? (typedResponse, string.Empty)
+                    : (default, "服务端响应反序列化失败。");
             }
 
             return (default, "未从服务端收到响应。");

@@ -1,0 +1,14 @@
+<Solution>
+  <Folder Name="/Solution Items/">
+    <File Path="Directory.Packages.props" />
+    <File Path="README-zh_CN.md" />
+    <File Path="README.md" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/CodeWF.EventBus.Socket/CodeWF.EventBus.Socket.csproj" />
+  </Folder>
+  <Folder Name="/test/">
+    <Project Path="src/CodeWF.EventBus.Socket.Test/CodeWF.EventBus.Socket.Test.csproj" />
+    <Project Path="src/EventBusDemo/EventBusDemo.csproj" />
+  </Folder>
+</Solution>

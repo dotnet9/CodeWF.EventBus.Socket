@@ -108,3 +108,33 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 - 事件总线层自己的请求、查询和推送协议对象仍保留在本项目中，因为它们承载的是本库特有的语义。
 - 当前消息仅保存在内存中，不提供持久化、重试队列或进程重启后的投递保证。
 - 如果用于生产环境，请按实际需要补充认证、加密、监控、限流与重试策略。
+
+## 第三方开源组件审计（2026-05-20）
+
+检查方式：`dotnet restore CodeWF.EventBus.Socket.slnx`、`dotnet list package --include-transitive`、NuGet `.nuspec`、NuGet.org 与源码仓库信息。优先接受 MIT / Apache-2.0 / BSD；其它开源协议在源码与传递依赖均可追溯时单独标注。
+
+整改：
+
+- 解决方案已从 `CodeWF.EventBus.Socket.sln` 迁移为 `CodeWF.EventBus.Socket.slnx`。
+- 新增 `Directory.Packages.props`，直接依赖统一走中央包管理。
+- `Prism.Avalonia` / `Prism.DryIoc.Avalonia` 从 9.x 降到 MIT 的 `8.1.97.11073`，并继续保留该开源线。
+- 移除未使用的 `Irihi.Ursa.PrismExtension`。
+- 示例依赖升级到 `Avalonia 12.0.3`、`Semi.Avalonia 12.0.1`、`Irihi.Ursa 2.0.0`、`ReactiveUI.Avalonia 12.0.1`、`CodeWF.NetWrapper 2.1.1`、`CodeWF.EventBus 3.4.5.5`、`CodeWF.LogViewer.Avalonia 12.0.3.1`。
+- 移除 `Avalonia.Diagnostics`，该包目前没有 Avalonia 12 对应包线。
+- 旧传递依赖 `System.Configuration.ConfigurationManager`、`System.Drawing.Common`、`System.Security.Cryptography.ProtectedData` 等已 pin 到 `10.0.8`。
+
+| 包 | 使用范围 | 协议 | 源码/项目地址 | 结论 |
+| --- | --- | --- | --- | --- |
+| `CodeWF.EventBus` / `CodeWF.NetWrapper` / `CodeWF.NetWeaver` / `CodeWF.Log.Core` / `CodeWF.LogViewer.Avalonia` | 事件总线、TCP 传输与示例日志 | MIT | CodeWF 自研仓库 | 自研开源包，通过 |
+| `Avalonia` / `Avalonia.Desktop` / `Avalonia.Markup.Xaml.Loader` | 示例 UI | MIT | https://github.com/AvaloniaUI/Avalonia | 通过，`12.0.3` |
+| `Semi.Avalonia` | 示例主题 | MIT | https://github.com/irihitech/Semi.Avalonia | 通过，仅使用开源主体包 |
+| `Irihi.Ursa` / `Irihi.Ursa.Themes.Semi` | 示例控件与主题 | MIT | https://github.com/irihitech/Ursa.Avalonia | 通过，`2.0.0` |
+| `Prism.Avalonia` / `Prism.DryIoc.Avalonia` | 示例 DI / Prism shell | MIT | https://github.com/AvaloniaCommunity/Prism.Avalonia | 通过，固定到 8.x 开源线 |
+| `ReactiveUI.Avalonia` | 示例 MVVM | MIT | https://github.com/reactiveui/reactiveui | 通过 |
+| `System.Configuration.ConfigurationManager` / `System.Drawing.Common` / `System.Security.Cryptography.ProtectedData` / `System.Security.Permissions` / `System.Windows.Extensions` | 传递依赖兼容 pin | MIT | https://github.com/dotnet/dotnet | 通过，固定到 `10.0.8` |
+| `Tmds.DBus.Protocol` | Avalonia Linux 桌面传输 | MIT | https://github.com/tmds/Tmds.DBus | 通过，固定到 `0.93.0` |
+| `YY-Thunks` | Windows 兼容 | MIT | https://github.com/Chuyu-Team/YY-Thunks | 源码开放，通过 |
+| `Microsoft.NET.Test.Sdk` / `coverlet.collector` | 测试 | MIT | https://github.com/microsoft/vstest / https://github.com/coverlet-coverage/coverlet | 通过 |
+| `xunit` / `xunit.runner.visualstudio` | 测试 | Apache-2.0 | https://github.com/xunit/xunit | 通过 |
+
+传递依赖检查结论：有效依赖链未发现 Prism 9 预览包或旧 `System.Drawing.Common 4.7.0` / `System.Configuration.ConfigurationManager 4.7.0` / `System.Security.Cryptography.ProtectedData 4.7.0` 链路。`CodeWF.NetWrapper` 已解析到 `2.1.1`。

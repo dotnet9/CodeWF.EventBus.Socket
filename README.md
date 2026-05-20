@@ -108,3 +108,32 @@ Data packets are exchanged over `TCP`.
 - Event-bus-specific request/query/update packets remain defined in this project because they carry library-specific semantics.
 - Messages are kept in memory only. There is no persistence, broker-side retry queue, or delivery guarantee after a process restart.
 - For production use, consider whether you need authentication, encryption, retry, monitoring, and back-pressure around the socket transport.
+
+## Third-Party Open Source Audit (2026-05-20)
+
+Checked with `dotnet restore CodeWF.EventBus.Socket.slnx`, `dotnet list package --include-transitive`, NuGet `.nuspec` metadata, NuGet.org, and upstream source/license links. MIT / Apache-2.0 / BSD are preferred; other source-open licenses are noted when source and transitive dependencies are traceable.
+
+Remediation:
+
+- Migrated the solution from `CodeWF.EventBus.Socket.sln` to `CodeWF.EventBus.Socket.slnx`.
+- Added `Directory.Packages.props` and centralized direct package versions.
+- Upgraded the demo package line to `Avalonia 12.0.3`, `Semi.Avalonia 12.0.1`, `Irihi.Ursa 2.0.0`, `ReactiveUI.Avalonia 12.0.1`, `CodeWF.NetWrapper 2.1.1`, `CodeWF.EventBus 3.4.5.5`, and `CodeWF.LogViewer.Avalonia 12.0.3.1`.
+- Removed `Avalonia.Diagnostics` because it does not have an Avalonia 12 package line.
+- Kept `Prism.Avalonia` / `Prism.DryIoc.Avalonia` on MIT `8.1.97.11073`; the newer 9.x line is intentionally not used.
+- Removed unused `Irihi.Ursa.PrismExtension 9.0.1` and pinned old transitive system packages to `10.0.8`.
+
+| Package | Usage | License | Source | Status |
+| --- | --- | --- | --- | --- |
+| `CodeWF.EventBus` / `CodeWF.NetWrapper` / `CodeWF.NetWeaver` / `CodeWF.Log.Core` / `CodeWF.LogViewer.Avalonia` | Event bus, socket transport, demo logging | MIT | CodeWF repositories | Own open-source packages; approved |
+| `Avalonia` / `Avalonia.Desktop` / `Avalonia.Markup.Xaml.Loader` | Demo UI | MIT | https://github.com/AvaloniaUI/Avalonia | Approved, `12.0.3` |
+| `Semi.Avalonia` | Demo theme | MIT | https://github.com/irihitech/Semi.Avalonia | Approved, only the open core package is used |
+| `Irihi.Ursa` / `Irihi.Ursa.Themes.Semi` | Demo controls and theme | MIT | https://github.com/irihitech/Ursa.Avalonia | Approved, `2.0.0` |
+| `Prism.Avalonia` / `Prism.DryIoc.Avalonia` | Demo DI / Prism shell | MIT | https://github.com/AvaloniaCommunity/Prism.Avalonia | Approved, pinned to the 8.x open line |
+| `ReactiveUI.Avalonia` | Demo MVVM | MIT | https://github.com/reactiveui/reactiveui | Approved |
+| `System.Configuration.ConfigurationManager` / `System.Drawing.Common` / `System.Security.Cryptography.ProtectedData` / `System.Security.Permissions` / `System.Windows.Extensions` | Transitive compatibility pins | MIT | https://github.com/dotnet/dotnet | Approved, pinned to `10.0.8` |
+| `Tmds.DBus.Protocol` | Avalonia Linux desktop transport | MIT | https://github.com/tmds/Tmds.DBus | Approved, pinned to `0.93.0` |
+| `YY-Thunks` | Windows compatibility | MIT | https://github.com/Chuyu-Team/YY-Thunks | Source-open; approved |
+| `Microsoft.NET.Test.Sdk` / `coverlet.collector` | Tests | MIT | https://github.com/microsoft/vstest / https://github.com/coverlet-coverage/coverlet | Approved |
+| `xunit` / `xunit.runner.visualstudio` | Tests | Apache-2.0 | https://github.com/xunit/xunit | Approved |
+
+Transitive dependency check: the effective dependency graph does not contain Prism 9 preview packages, or old `System.Drawing.Common 4.7.0` / `System.Configuration.ConfigurationManager 4.7.0` / `System.Security.Cryptography.ProtectedData 4.7.0` chains. `CodeWF.NetWrapper` is now resolved to `2.1.1`.
