@@ -15,7 +15,7 @@
         WindowStartupLocation="CenterScreen"
         x:Class="EventBusDemo.Views.EventServerView"
         x:DataType="vm:EventServerViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/logo.ico"
         Title="{Binding Title}">
     <Window.Styles>
         <Style Selector="Button">

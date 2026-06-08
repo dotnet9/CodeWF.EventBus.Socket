@@ -14,7 +14,7 @@
         x:Class="EventBusDemo.Views.EventManagerView"
         x:DataType="vm:EventManagerViewModel"
         WindowStartupLocation="CenterScreen"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/logo.ico"
         Title="{Binding Title}">
 
     <Design.DataContext>

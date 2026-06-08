@@ -1,8 +1,10 @@
 <Solution>
   <Folder Name="/Solution Items/">
+    <File Path="Directory.Build.props" />
     <File Path="Directory.Packages.props" />
-    <File Path="README-zh_CN.md" />
+    <File Path="pack.bat" />
     <File Path="README.md" />
+    <File Path="UpdateLog.md" />
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/CodeWF.EventBus.Socket/CodeWF.EventBus.Socket.csproj" />

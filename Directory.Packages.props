@@ -4,21 +4,21 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Avalonia" Version="12.0.3" />
-    <PackageVersion Include="Avalonia.Desktop" Version="12.0.3" />
+    <PackageVersion Include="Avalonia" Version="12.0.4" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.0.4" />
     <PackageVersion Include="Avalonia.Markup.Xaml.Loader" Version="12.0.3" />
     <PackageVersion Include="CodeWF.EventBus" Version="3.4.5.5" />
     <PackageVersion Include="CodeWF.Log.Core" Version="12.0.3.1" />
     <PackageVersion Include="CodeWF.LogViewer.Avalonia" Version="12.0.3.1" />
-    <PackageVersion Include="CodeWF.NetWrapper" Version="2.1.1" />
+    <PackageVersion Include="CodeWF.NetWrapper" Version="2.1.2.3" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="Irihi.Ursa" Version="2.0.0" />
     <PackageVersion Include="Irihi.Ursa.Themes.Semi" Version="2.0.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.5.1" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.6.0" />
     <PackageVersion Include="Prism.Avalonia" Version="8.1.97.11073" />
     <PackageVersion Include="Prism.DryIoc.Avalonia" Version="8.1.97.11073" />
-    <PackageVersion Include="ReactiveUI.Avalonia" Version="12.0.1" />
-    <PackageVersion Include="Semi.Avalonia" Version="12.0.1" />
+    <PackageVersion Include="ReactiveUI.Avalonia" Version="12.0.3" />
+    <PackageVersion Include="Semi.Avalonia" Version="12.0.3" />
     <PackageVersion Include="System.Configuration.ConfigurationManager" Version="10.0.8" />
     <PackageVersion Include="System.Drawing.Common" Version="10.0.8" />
     <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.8" />
@@ -28,5 +28,6 @@
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
     <PackageVersion Include="YY-Thunks" Version="1.2.1" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
   </ItemGroup>
 </Project>

@@ -15,7 +15,7 @@
         WindowStartupLocation="CenterScreen"
         x:Class="EventBusDemo.Views.EventClientView"
         x:DataType="vm:EventClientViewModel"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/logo.ico"
         Title="{Binding Title}">
     <Grid RowDefinitions="Auto,Auto,Auto,1*" ColumnDefinitions="1*" ColumnSpacing="10" RowSpacing="15">
         <Border Grid.Row="0" Padding="12" BorderBrush="#E0E0E0" BorderThickness="1" CornerRadius="6">
