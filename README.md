@@ -146,3 +146,6 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 | `xunit` / `xunit.runner.visualstudio` | 测试 | Apache-2.0 | https://github.com/xunit/xunit | 通过 |
 
 传递依赖检查结论：有效依赖链未发现 Prism 9 预览包或旧 `System.Drawing.Common 4.7.0` / `System.Configuration.ConfigurationManager 4.7.0` / `System.Security.Cryptography.ProtectedData 4.7.0` 链路。`CodeWF.NetWrapper` 已解析到 `2.1.2.3`。
+## Package Versioning Convention
+
+Keep NuGet package versions and Central Package Management settings in `Directory.Packages.props`, including shared version properties such as `AvaloniaVersion`. Keep `Directory.Build.props` focused on build, compiler, and NuGet package metadata. When referenced, `VC-LTL` and `YY-Thunks` should use their latest prerelease versions for OS platform compatibility.
