@@ -17,13 +17,13 @@ public class EventClient : IEventClient
     // 每个主题在本地注册的处理器列表。
     private readonly ConcurrentDictionary<string, List<Delegate>> _subjectAndHandlers = new();
 
-    private readonly Func<SocketCommand, Task> _socketCommandHandler;
     private readonly Func<TcpClientErrorCommand, Task> _clientErrorHandler;
 
     private Channel<SocketCommand> _inboundCommands = CreateInboundCommandChannel();
     private Channel<OutboundCommand> _outboundCommands = CreateOutboundCommandChannel();
     private CancellationTokenSource? _cancellationTokenSource;
     private TcpSocketClient? _client;
+    private IDisposable? _clientCommandRegistration;
     private string? _host;
     private int _port;
     // 连接建立后先做一次轻量握手，确认对端真的是事件总线服务。
@@ -31,14 +31,13 @@ public class EventClient : IEventClient
     private string? _requestIsEventServerTaskId;
     private int _trySendHeartbeatTimes;
     private int _reconnectScheduled;
-    private bool _isSubscribedToTransportEvents;
+    private bool _isSubscribedToClientErrorEvents;
 
     private sealed record QueryResponseContext(string Subject, string TaskId);
     private sealed record OutboundCommand(INetObject Command, bool NeedCheckConnectStatus);
 
     public EventClient()
     {
-        _socketCommandHandler = HandleSocketCommandAsync;
         _clientErrorHandler = HandleClientErrorAsync;
     }
 
@@ -60,12 +59,13 @@ public class EventClient : IEventClient
         _cancellationTokenSource = new CancellationTokenSource();
         ConnectStatus = ConnectStatus.IsConnecting;
         ResetPipelines();
-        EnsureTransportSubscriptions();
+        EnsureClientErrorSubscription();
 
         while (!_cancellationTokenSource.IsCancellationRequested)
         {
             try
             {
+                DisposeClientCommandRegistration();
                 _client?.Stop();
                 _client = new TcpSocketClient();
                 var (isSuccess, errorMessage) = await _client.ConnectAsync(nameof(EventClient), host, port);
@@ -74,17 +74,22 @@ public class EventClient : IEventClient
                     throw new Exception(errorMessage ?? "连接事件总线服务失败。");
                 }
 
+                _clientCommandRegistration = _client.RegisterCommandHandler(HandleSocketCommandAsync);
                 Interlocked.Exchange(ref _reconnectScheduled, 0);
                 await CheckIsEventServerAsync();
                 return ConnectStatus == ConnectStatus.Connected;
             }
             catch (SocketException ex)
             {
+                DisposeClientCommandRegistration();
+                _client?.Stop();
                 Debug.WriteLine($"TCP 服务连接异常，将在 {ReconnectInterval / 1000} 秒后重新连接：{ex.Message}");
                 await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval), CancellationToken.None);
             }
             catch (Exception ex)
             {
+                DisposeClientCommandRegistration();
+                _client?.Stop();
                 Debug.WriteLine($"事件服务连接异常：{ex.Message}");
                 ConnectStatus = ConnectStatus.Disconnected;
                 await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval), CancellationToken.None);
@@ -100,6 +105,7 @@ public class EventClient : IEventClient
         {
             // 先通知后台循环退出，再关闭底层连接。
             _cancellationTokenSource?.Cancel();
+            DisposeClientCommandRegistration();
             _client?.Stop();
             _client = null;
         }
@@ -118,7 +124,7 @@ public class EventClient : IEventClient
             _inboundCommands.Writer.TryComplete();
             _outboundCommands.Writer.TryComplete();
             CompleteQueryChannels();
-            RemoveTransportSubscriptions();
+            RemoveClientErrorSubscription();
         }
     }
 
@@ -322,40 +328,33 @@ public class EventClient : IEventClient
         }
     }
 
-    private void EnsureTransportSubscriptions()
+    private void EnsureClientErrorSubscription()
     {
-        if (_isSubscribedToTransportEvents)
+        if (_isSubscribedToClientErrorEvents)
         {
             return;
         }
 
-        EventBus.Default.Subscribe(_socketCommandHandler);
         EventBus.Default.Subscribe(_clientErrorHandler);
-        _isSubscribedToTransportEvents = true;
+        _isSubscribedToClientErrorEvents = true;
     }
 
-    private void RemoveTransportSubscriptions()
+    private void RemoveClientErrorSubscription()
     {
-        if (!_isSubscribedToTransportEvents)
+        if (!_isSubscribedToClientErrorEvents)
         {
             return;
         }
 
-        EventBus.Default.Unsubscribe(_socketCommandHandler);
         EventBus.Default.Unsubscribe(_clientErrorHandler);
-        _isSubscribedToTransportEvents = false;
+        _isSubscribedToClientErrorEvents = false;
     }
 
-    private Task HandleSocketCommandAsync(SocketCommand command)
+    private Task<bool> HandleSocketCommandAsync(SocketCommand command)
     {
-        if (!BelongsToCurrentClient(command.Client))
-        {
-            return Task.CompletedTask;
-        }
-
-        // 传输层回调只负责入队；若连接正在关闭，直接忽略残留消息即可。
+        // 当前处理器注册在 TcpSocketClient 实例上，不再需要走全局事件总线后按端点二次过滤。
         _inboundCommands.Writer.TryWrite(command);
-        return Task.CompletedTask;
+        return Task.FromResult(true);
     }
 
     private Task HandleClientErrorAsync(TcpClientErrorCommand error)
@@ -599,11 +598,6 @@ public class EventClient : IEventClient
         }
     }
 
-    private bool BelongsToCurrentClient(System.Net.Sockets.Socket? socket)
-    {
-        return socket?.LocalEndPoint?.ToString() == _client?.LocalEndPoint;
-    }
-
     private void CompleteQueryChannels()
     {
         foreach (var responseChannel in _queryResponseChannels.Values)
@@ -639,6 +633,12 @@ public class EventClient : IEventClient
         return context is not null && string.Equals(context.Subject, subject, StringComparison.Ordinal)
             ? context.TaskId
             : null;
+    }
+
+    private void DisposeClientCommandRegistration()
+    {
+        _clientCommandRegistration?.Dispose();
+        _clientCommandRegistration = null;
     }
 
     #endregion

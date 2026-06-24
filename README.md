@@ -12,7 +12,7 @@
 
 ## 仓库规范
 
-- 当前版本：`1.2.6`，版本号统一维护在根目录 `Directory.Build.props` 的 `<Version>` 节点。
+- 当前版本：`1.3.0`，版本号统一维护在根目录 `Directory.Build.props` 的 `<Version>` 节点。
 - NuGet 包项目统一支持 `net8.0;net10.0`；Demo、App、测试与内部应用项目统一使用 `net11.0` / `net11.0-windows`。
 - 根目录 `logo.svg`、`logo.png`、`logo.ico` 是唯一图标源，子工程只通过 MSBuild `Link` 引用，不维护图标副本。
 - 运行时帮助、Markdown 示例、内置备忘录、设计说明等业务文档按功能保留；仓库级入口文档使用根目录 `README.md` 和 `UpdateLog.md`。
@@ -23,7 +23,7 @@
 - 支持 Publish/Subscribe 跨进程事件通知
 - 支持同一主题下的 Query/Response 交互
 - 查询请求按 `TaskId` 关联，支持同主题并发查询
-- 直接复用 `CodeWF.NetWrapper` 的 `TcpSocketServer`、`TcpSocketClient`、`SocketCommand`、`Heartbeat`
+- 直接复用 `CodeWF.NetWrapper` 的 `TcpSocketServer`、`TcpSocketClient`、实例命令处理器、`SocketCommand`、`Heartbeat`
 - 不依赖第三方 MQ
 - 自带示例工程 `src/EventBusDemo`
 
@@ -112,7 +112,7 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 ## 说明
 
 - 这个库适合轻量级事件分发和进程间通信场景。
-- 底层传输由 `CodeWF.NetWrapper` 实现，同名传输对象直接复用包内定义，而不是在本项目重复维护。
+- 底层传输由 `CodeWF.NetWrapper` 实现，事件总线通过 `RegisterCommandHandler` 挂接到当前 TCP 客户端/服务端实例，不再通过全局传输事件做命令分发。
 - 事件总线层自己的请求、查询和推送协议对象仍保留在本项目中，因为它们承载的是本库特有的语义。
 - 当前消息仅保存在内存中，不提供持久化、重试队列或进程重启后的投递保证。
 - 如果用于生产环境，请按实际需要补充认证、加密、监控、限流与重试策略。
@@ -127,7 +127,7 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 - 新增 `Directory.Packages.props`，直接依赖统一走中央包管理。
 - `Prism.Avalonia` / `Prism.DryIoc.Avalonia` 从 9.x 降到 MIT 的 `8.1.97.11073`，并继续保留该开源线。
 - 移除未使用的 `Irihi.Ursa.PrismExtension`。
-- 示例依赖升级到 `Avalonia 12.0.3`、`Semi.Avalonia 12.0.1`、`Irihi.Ursa 2.0.0`、`ReactiveUI.Avalonia 12.0.1`、`CodeWF.NetWrapper 2.1.2.3`、`CodeWF.EventBus 3.4.5.5`、`CodeWF.LogViewer.Avalonia 12.0.3.1`。
+- 示例依赖升级到 `Avalonia 12.0.3`、`Semi.Avalonia 12.0.1`、`Irihi.Ursa 2.0.0`、`ReactiveUI.Avalonia 12.0.1`、`CodeWF.NetWrapper 3.0.0`、`CodeWF.EventBus 3.4.5.5`、`CodeWF.LogViewer.Avalonia 12.0.3.1`。
 - 移除 `Avalonia.Diagnostics`，该包目前没有 Avalonia 12 对应包线。
 - 旧传递依赖 `System.Configuration.ConfigurationManager`、`System.Drawing.Common`、`System.Security.Cryptography.ProtectedData` 等已 pin 到 `10.0.8`。
 
@@ -145,7 +145,7 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 | `Microsoft.NET.Test.Sdk` / `coverlet.collector` | 测试 | MIT | https://github.com/microsoft/vstest / https://github.com/coverlet-coverage/coverlet | 通过 |
 | `xunit` / `xunit.runner.visualstudio` | 测试 | Apache-2.0 | https://github.com/xunit/xunit | 通过 |
 
-传递依赖检查结论：有效依赖链未发现 Prism 9 预览包或旧 `System.Drawing.Common 4.7.0` / `System.Configuration.ConfigurationManager 4.7.0` / `System.Security.Cryptography.ProtectedData 4.7.0` 链路。`CodeWF.NetWrapper` 已解析到 `2.1.2.3`。
+传递依赖检查结论：有效依赖链未发现 Prism 9 预览包或旧 `System.Drawing.Common 4.7.0` / `System.Configuration.ConfigurationManager 4.7.0` / `System.Security.Cryptography.ProtectedData 4.7.0` 链路。`CodeWF.NetWrapper` 已解析到 `3.0.0`。
 ## 包版本维护约定
 
 XML 文件统一使用两个空格缩进。`Directory.Packages.props` 统一承载 NuGet 中央包管理开关和包版本变量，包括 `AvaloniaVersion` 等共享版本属性；`Directory.Build.props` 仅保留项目构建、编译选项和 NuGet 元数据。仓库如引用 `VC-LTL`、`YY-Thunks`，这两个兼容旧版操作系统的特殊包必须使用最新预览版。

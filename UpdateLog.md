@@ -1,5 +1,11 @@
 # 更新日志
 
+## 1.3.0 (2026-06-24)
+
+- 🔨[优化]-升级 `CodeWF.NetWrapper` 依赖到 `3.0.0`，事件总线主消息路径改为使用 `TcpSocketClient.RegisterCommandHandler` / `TcpSocketServer.RegisterCommandHandler` 实例处理器。
+- 🔨[优化]-移除普通 `SocketCommand` 对 `CodeWF.EventBus.Default` 的全局订阅与端点过滤逻辑，降低多客户端、多服务端实例下的维护复杂度；客户端断线错误仍兼容 `TcpClientErrorCommand` 处理。
+- 🔨[优化]-保持 `IEventClient`、`IEventServer`、发布订阅、查询响应和心跳行为不变，改造只影响内部传输接入方式。
+
 ## 1.2.6 (2026-06-08)
 
 - 🎨[优化]-重新收敛根目录 `logo.svg`、`logo.png`、`logo.ico`，改为更简洁的 Socket 总线与中心端口图形，提升任务栏、浏览器标签和 NuGet 小图标辨识度。

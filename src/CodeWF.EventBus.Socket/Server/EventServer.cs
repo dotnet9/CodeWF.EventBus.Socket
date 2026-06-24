@@ -1,5 +1,3 @@
-using CodeWF.EventBus;
-
 // ReSharper disable once CheckNamespace
 namespace CodeWF.EventBus.Socket;
 
@@ -12,21 +10,15 @@ public class EventServer : IEventServer
     private readonly ConcurrentDictionary<string, PendingQuery> _pendingQueries = new();
     // 主题订阅表：键为主题，值为订阅该主题的客户端连接集合。
     private readonly ConcurrentDictionary<string, List<System.Net.Sockets.Socket>> _subscribedSubjectAndClients = new();
-    private readonly Func<SocketCommand, Task> _socketCommandHandler;
 
     private Channel<SocketCommand> _inboundCommands = CreateInboundCommandChannel();
     private Channel<OutboundCommand> _outboundCommands = CreateOutboundCommandChannel();
     private CancellationTokenSource? _cancellationTokenSource;
     private TcpSocketServer? _server;
-    private bool _isSubscribedToTransportEvents;
+    private IDisposable? _serverCommandRegistration;
 
     private sealed record PendingQuery(string Subject, System.Net.Sockets.Socket Client);
     private sealed record OutboundCommand(System.Net.Sockets.Socket Client, INetObject Command);
-
-    public EventServer()
-    {
-        _socketCommandHandler = HandleSocketCommandAsync;
-    }
 
     #region interface methods
 
@@ -37,7 +29,6 @@ public class EventServer : IEventServer
         ConnectStatus = ConnectStatus.IsConnecting;
         _cancellationTokenSource = new CancellationTokenSource();
         ResetPipelines();
-        EnsureTransportSubscriptions();
         var listenIp = string.IsNullOrWhiteSpace(host) ? "0.0.0.0" : host;
 
         _ = Task.Run(async () =>
@@ -46,6 +37,7 @@ public class EventServer : IEventServer
             {
                 try
                 {
+                    DisposeServerCommandRegistration();
                     _server?.StopAsync().GetAwaiter().GetResult();
                     _server = new TcpSocketServer();
                     var (isSuccess, errorMessage) = await _server.StartAsync(nameof(EventServer), listenIp, port);
@@ -54,6 +46,7 @@ public class EventServer : IEventServer
                         throw new Exception(errorMessage ?? "事件服务启动失败。");
                     }
 
+                    _serverCommandRegistration = _server.RegisterCommandHandler(HandleSocketCommandAsync);
                     ConnectStatus = ConnectStatus.Connected;
                     break;
                 }
@@ -72,13 +65,13 @@ public class EventServer : IEventServer
         ConnectStatus = ConnectStatus.IsConnecting;
         _cancellationTokenSource = cancellationToken ?? new CancellationTokenSource();
         ResetPipelines();
-        EnsureTransportSubscriptions();
         var listenIp = string.IsNullOrWhiteSpace(host) ? "0.0.0.0" : host;
 
         while (!_cancellationTokenSource.IsCancellationRequested)
         {
             try
             {
+                DisposeServerCommandRegistration();
                 _server?.StopAsync().GetAwaiter().GetResult();
                 _server = new TcpSocketServer();
                 var (isSuccess, errorMessage) = await _server.StartAsync(nameof(EventServer), listenIp, port);
@@ -87,6 +80,7 @@ public class EventServer : IEventServer
                     throw new Exception(errorMessage ?? "事件服务启动失败。");
                 }
 
+                _serverCommandRegistration = _server.RegisterCommandHandler(HandleSocketCommandAsync);
                 ConnectStatus = ConnectStatus.Connected;
                 return;
             }
@@ -104,6 +98,7 @@ public class EventServer : IEventServer
         try
         {
             _cancellationTokenSource?.Cancel();
+            DisposeServerCommandRegistration();
             _server?.StopAsync().GetAwaiter().GetResult();
             _server = null;
         }
@@ -118,7 +113,6 @@ public class EventServer : IEventServer
             _outboundCommands.Writer.TryComplete();
             _pendingQueries.Clear();
             _subscribedSubjectAndClients.Clear();
-            RemoveTransportSubscriptions();
         }
     }
 
@@ -126,48 +120,11 @@ public class EventServer : IEventServer
 
     #region private methods
 
-    private void EnsureTransportSubscriptions()
+    private Task<bool> HandleSocketCommandAsync(string clientKey, TcpSession session, SocketCommand command)
     {
-        if (_isSubscribedToTransportEvents)
-        {
-            return;
-        }
-
-        EventBus.Default.Subscribe(_socketCommandHandler);
-        _isSubscribedToTransportEvents = true;
-    }
-
-    private void RemoveTransportSubscriptions()
-    {
-        if (!_isSubscribedToTransportEvents)
-        {
-            return;
-        }
-
-        EventBus.Default.Unsubscribe(_socketCommandHandler);
-        _isSubscribedToTransportEvents = false;
-    }
-
-    private Task HandleSocketCommandAsync(SocketCommand command)
-    {
-        if (!BelongsToCurrentServer(command.Client))
-        {
-            return Task.CompletedTask;
-        }
-
-        // 传输层回调只做快速入队；若服务正在停止，直接忽略残留消息即可。
+        // 当前处理器注册在 TcpSocketServer 实例上，不再需要经过全局 EventBus 后按服务端口过滤。
         _inboundCommands.Writer.TryWrite(command);
-        return Task.CompletedTask;
-    }
-
-    private bool BelongsToCurrentServer(System.Net.Sockets.Socket? socket)
-    {
-        if (socket?.LocalEndPoint is not IPEndPoint localEndPoint)
-        {
-            return false;
-        }
-
-        return _server != null && localEndPoint.Port == _server.ServerPort;
+        return Task.FromResult(true);
     }
 
     private void RemoveClient(System.Net.Sockets.Socket tcpClient)
@@ -504,6 +461,12 @@ public class EventServer : IEventServer
             SingleReader = true,
             SingleWriter = false
         });
+    }
+
+    private void DisposeServerCommandRegistration()
+    {
+        _serverCommandRegistration?.Dispose();
+        _serverCommandRegistration = null;
     }
 
     #endregion
