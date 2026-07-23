@@ -1,5 +1,7 @@
 ﻿using System;
+using System.IO;
 using Avalonia;
+using CodeWF.Log.Core;
 using ReactiveUI.Avalonia;
 
 namespace EventBusDemo;
@@ -17,9 +19,24 @@ internal sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
-        Args = args;
-        BuildAvaloniaApp()
-            .StartWithClassicDesktopLifetime(args);
+        Logger.Initialize(new LoggerOptions
+        {
+            File = new FileLogOptions
+            {
+                DirectoryPath = Path.Combine(Environment.CurrentDirectory, "Log")
+            }
+        });
+
+        try
+        {
+            Args = args;
+            BuildAvaloniaApp()
+                .StartWithClassicDesktopLifetime(args);
+        }
+        finally
+        {
+            Logger.ShutdownAsync().GetAwaiter().GetResult();
+        }
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

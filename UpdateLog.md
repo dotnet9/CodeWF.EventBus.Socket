@@ -1,5 +1,10 @@
 # 更新日志
 
+## 1.3.2 (2026-07-23)
+
+- 🔧[修复]-升级 `CodeWF.NetWrapper` 到 `3.0.5` 并重新编译发布包，避免下游程序混用新旧日志程序集时发生方法缺失异常。
+- 🔨[优化]-事件总线 Demo 补齐日志组件初始化和关闭生命周期。
+
 ## 1.3.0 (2026-06-24)
 
 - 🔨[优化]-升级 `CodeWF.NetWrapper` 依赖到 `3.0.0`，事件总线主消息路径改为使用 `TcpSocketClient.RegisterCommandHandler` / `TcpSocketServer.RegisterCommandHandler` 实例处理器。
