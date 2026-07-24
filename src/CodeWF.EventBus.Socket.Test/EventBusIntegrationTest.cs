@@ -3,6 +3,7 @@ using System.Net.Sockets;
 
 namespace CodeWF.EventBus.Socket.Test;
 
+[Collection(LoggingCollection.Name)]
 public class EventBusIntegrationTest
 {
     private sealed class OrderCreated

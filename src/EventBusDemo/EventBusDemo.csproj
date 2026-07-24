@@ -30,7 +30,7 @@
   <ItemGroup>
     <PackageReference Include="Avalonia" />
     <PackageReference Include="Avalonia.Desktop" />
-    <PackageReference Include="CodeWF.LogViewer.Avalonia" />
+    <PackageReference Include="CodeWF.Log.Avalonia" />
     <PackageReference Include="Semi.Avalonia" />
     <PackageReference Include="Irihi.Ursa" />
     <PackageReference Include="Irihi.Ursa.Themes.Semi" />
