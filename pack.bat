@@ -6,14 +6,9 @@ set "SOLUTION=%ROOT%CodeWF.EventBus.Socket.slnx"
 set "PACKAGE_PROJECT=%ROOT%src\CodeWF.EventBus.Socket\CodeWF.EventBus.Socket.csproj"
 set "CONFIGURATION=Release"
 set "PACKAGE_DIR=%ROOT%artifacts\packages"
-set "NETWEAVER_PACKAGE_DIR=%ROOT%..\CodeWF.NetWeaver\artifacts\packages"
 
 echo [CodeWF.EventBus.Socket] Restore packages...
-if exist "%NETWEAVER_PACKAGE_DIR%\CodeWF.NetWrapper.*.nupkg" (
-    dotnet restore "%SOLUTION%" --source "%NETWEAVER_PACKAGE_DIR%" --source "https://api.nuget.org/v3/index.json"
-) else (
-    dotnet restore "%SOLUTION%"
-)
+dotnet restore "%SOLUTION%"
 if errorlevel 1 goto :failed
 
 if not exist "%PACKAGE_DIR%" mkdir "%PACKAGE_DIR%"
