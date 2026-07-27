@@ -8,8 +8,8 @@
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.0" />
     <PackageVersion Include="Avalonia.Markup.Xaml.Loader" Version="12.1.0" />
     <PackageVersion Include="CodeWF.EventBus" Version="3.4.5.11" />
-    <PackageVersion Include="CodeWF.Log.Core" Version="12.1.0.22" />
-    <PackageVersion Include="CodeWF.Log.Avalonia" Version="12.1.0.22" />
+    <PackageVersion Include="CodeWF.Log.Core" Version="12.1.0.23" />
+    <PackageVersion Include="CodeWF.Log.Avalonia" Version="12.1.0.23" />
     <PackageVersion Include="CodeWF.NetWrapper" Version="3.0.8" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="Irihi.Ursa" Version="2.1.0" />
