@@ -4,30 +4,30 @@
     <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
-    <PackageVersion Include="Avalonia" Version="12.1.0" />
-    <PackageVersion Include="Avalonia.Desktop" Version="12.1.0" />
-    <PackageVersion Include="Avalonia.Markup.Xaml.Loader" Version="12.1.0" />
-    <PackageVersion Include="CodeWF.EventBus" Version="3.4.5.11" />
-    <PackageVersion Include="CodeWF.Log.Core" Version="12.1.0.23" />
-    <PackageVersion Include="CodeWF.Log.Avalonia" Version="12.1.0.23" />
-    <PackageVersion Include="CodeWF.NetWrapper" Version="3.0.8" />
+    <PackageVersion Include="Avalonia" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageVersion Include="Avalonia.Markup.Xaml.Loader" Version="12.1.1" />
+    <PackageVersion Include="CodeWF.EventBus" Version="3.4.5.13" />
+    <PackageVersion Include="CodeWF.Log.Core" Version="12.1.1.2" />
+    <PackageVersion Include="CodeWF.Log.Avalonia" Version="12.1.1.2" />
+    <PackageVersion Include="CodeWF.NetWrapper" Version="3.0.10" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
-    <PackageVersion Include="Irihi.Ursa" Version="2.1.0" />
-    <PackageVersion Include="Irihi.Ursa.Themes.Semi" Version="2.1.0" />
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.7.0" />
+    <PackageVersion Include="Irihi.Ursa" Version="2.2.0" />
+    <PackageVersion Include="Irihi.Ursa.Themes.Semi" Version="2.2.0" />
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
     <PackageVersion Include="Prism.Avalonia" Version="8.1.97.11073" />
     <PackageVersion Include="Prism.DryIoc.Avalonia" Version="8.1.97.11073" />
-    <PackageVersion Include="ReactiveUI.Avalonia" Version="12.0.3" />
-    <PackageVersion Include="Semi.Avalonia" Version="12.1.0" />
-    <PackageVersion Include="System.Configuration.ConfigurationManager" Version="10.0.9" />
-    <PackageVersion Include="System.Drawing.Common" Version="10.0.9" />
-    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.9" />
-    <PackageVersion Include="System.Security.Permissions" Version="10.0.9" />
-    <PackageVersion Include="System.Windows.Extensions" Version="10.0.9" />
+    <PackageVersion Include="ReactiveUI.Avalonia" Version="12.1.1" />
+    <PackageVersion Include="Semi.Avalonia" Version="12.1.0.1" />
+    <PackageVersion Include="System.Configuration.ConfigurationManager" Version="10.0.10" />
+    <PackageVersion Include="System.Drawing.Common" Version="10.0.10" />
+    <PackageVersion Include="System.Security.Cryptography.ProtectedData" Version="10.0.10" />
+    <PackageVersion Include="System.Security.Permissions" Version="10.0.10" />
+    <PackageVersion Include="System.Windows.Extensions" Version="10.0.10" />
     <PackageVersion Include="Tmds.DBus.Protocol" Version="0.94.2" />
     <PackageVersion Include="xunit" Version="2.9.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="3.1.5" />
-    <PackageVersion Include="YY-Thunks" Version="1.2.1" />
-    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.300" />
+    <PackageVersion Include="YY-Thunks" Version="1.2.2" />
+    <PackageVersion Include="Microsoft.SourceLink.GitHub" Version="10.0.301" />
   </ItemGroup>
 </Project>
