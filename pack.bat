@@ -23,6 +23,8 @@ echo [CodeWF.EventBus.Socket] Pack NuGet package...
 dotnet pack "%PACKAGE_PROJECT%" -c "%CONFIGURATION%" --no-build -o "%PACKAGE_DIR%"
 if errorlevel 1 goto :failed
 
+for /r "%PACKAGE_DIR%" %%F in (*.pdb) do del /q "%%F" 2>nul
+
 if not exist "%PACKAGE_DIR%\*.nupkg" goto :failed
 
 echo.
