@@ -7,10 +7,10 @@
     <PackageVersion Include="Avalonia" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageVersion Include="Avalonia.Markup.Xaml.Loader" Version="12.1.1" />
-    <PackageVersion Include="CodeWF.EventBus" Version="3.4.5.13" />
-    <PackageVersion Include="CodeWF.Log.Core" Version="12.1.1.2" />
-    <PackageVersion Include="CodeWF.Log.Avalonia" Version="12.1.1.2" />
-    <PackageVersion Include="CodeWF.NetWrapper" Version="3.0.10" />
+    <PackageVersion Include="CodeWF.EventBus" Version="3.4.5.16" />
+    <PackageVersion Include="CodeWF.Log.Core" Version="12.1.2.3" />
+    <PackageVersion Include="CodeWF.Log.Avalonia" Version="12.1.2.3" />
+    <PackageVersion Include="CodeWF.NetWrapper" Version="3.0.11" />
     <PackageVersion Include="coverlet.collector" Version="10.0.1" />
     <PackageVersion Include="Irihi.Ursa" Version="2.2.0" />
     <PackageVersion Include="Irihi.Ursa.Themes.Semi" Version="2.2.0" />
