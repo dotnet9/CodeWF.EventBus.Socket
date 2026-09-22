@@ -3,162 +3,166 @@ namespace CodeWF.EventBus.Socket;
 
 public class EventServer : IEventServer
 {
-    private const int RestartInterval = 3000;
+    private const int StartTimeoutMilliseconds = 3000;
 
-    // 待响应查询表：键为请求 TaskId，值为原始请求方连接。
-    // 响应端回包时，服务端据此把结果定向返回给真正的请求方。
+    private readonly EventBusOptions _options;
     private readonly ConcurrentDictionary<string, PendingQuery> _pendingQueries = new();
-    // 主题订阅表：键为主题，值为订阅该主题的客户端连接集合。
-    private readonly ConcurrentDictionary<string, List<System.Net.Sockets.Socket>> _subscribedSubjectAndClients = new();
+    private readonly ConcurrentDictionary<System.Net.Sockets.Socket, byte> _authorizedClients = new();
+    private readonly Dictionary<string, HashSet<System.Net.Sockets.Socket>> _subscribedSubjectAndClients = new(StringComparer.Ordinal);
+    private readonly object _subscriptionSync = new();
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
-    private Channel<SocketCommand> _inboundCommands = CreateInboundCommandChannel();
-    private Channel<OutboundCommand> _outboundCommands = CreateOutboundCommandChannel();
-    private CancellationTokenSource? _cancellationTokenSource;
-    private TcpSocketServer? _server;
-    private IDisposable? _serverCommandRegistration;
+    private ServerSession? _session;
 
-    private sealed record PendingQuery(string Subject, System.Net.Sockets.Socket Client);
+    private sealed class ServerSession
+    {
+        public ServerSession(EventBusOptions options)
+        {
+            Cancellation = new CancellationTokenSource();
+            Inbound = CreateInboundCommandChannel(options);
+            Outbound = CreateOutboundCommandChannel(options);
+        }
+
+        public CancellationTokenSource Cancellation { get; }
+        public Channel<SocketCommand> Inbound { get; }
+        public Channel<OutboundCommand> Outbound { get; }
+        public TcpSocketServer? Server { get; set; }
+        public IDisposable? CommandRegistration { get; set; }
+        public Task InboundTask { get; set; } = Task.CompletedTask;
+        public Task OutboundTask { get; set; } = Task.CompletedTask;
+        public Task CleanupTask { get; set; } = Task.CompletedTask;
+        public int Stopped;
+    }
+
+    private sealed record PendingQuery(
+        string Subject,
+        System.Net.Sockets.Socket Client,
+        DateTimeOffset ExpiresAt);
+
     private sealed record OutboundCommand(System.Net.Sockets.Socket Client, INetObject Command);
 
-    #region interface methods
+    public EventServer(EventBusOptions? options = null)
+    {
+        _options = options ?? new EventBusOptions();
+        _options.Validate();
+    }
 
-    public ConnectStatus ConnectStatus { get; private set; }
+    public ConnectStatus ConnectStatus { get; private set; } = ConnectStatus.Disconnected;
 
     public void Start(string? host, int port)
     {
-        ConnectStatus = ConnectStatus.IsConnecting;
-        _cancellationTokenSource = new CancellationTokenSource();
-        ResetPipelines();
-        var listenIp = string.IsNullOrWhiteSpace(host) ? "0.0.0.0" : host;
-
-        _ = Task.Run(async () =>
-        {
-            while (!_cancellationTokenSource.IsCancellationRequested)
-            {
-                try
-                {
-                    DisposeServerCommandRegistration();
-                    _server?.StopAsync().GetAwaiter().GetResult();
-                    _server = new TcpSocketServer();
-                    var (isSuccess, errorMessage) = await _server.StartAsync(nameof(EventServer), listenIp, port);
-                    if (!isSuccess)
-                    {
-                        throw new Exception(errorMessage ?? "事件服务启动失败。");
-                    }
-
-                    _serverCommandRegistration = _server.RegisterCommandHandler(HandleSocketCommandAsync);
-                    ConnectStatus = ConnectStatus.Connected;
-                    break;
-                }
-                catch (Exception ex)
-                {
-                    ConnectStatus = ConnectStatus.Disconnected;
-                    Debug.WriteLine($"TCP 服务启动异常，将在 {RestartInterval / 1000} 秒后重启：{ex.Message}");
-                    await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
-                }
-            }
-        }, _cancellationTokenSource.Token);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMilliseconds(StartTimeoutMilliseconds));
+        StartAsync(host, port, timeout.Token).GetAwaiter().GetResult();
     }
 
-    public async Task StartAsync(string? host, int port, CancellationTokenSource? cancellationToken = null)
+    public Task StartAsync(string? host, int port, CancellationTokenSource? cancellationToken = null)
     {
-        ConnectStatus = ConnectStatus.IsConnecting;
-        _cancellationTokenSource = cancellationToken ?? new CancellationTokenSource();
-        ResetPipelines();
-        var listenIp = string.IsNullOrWhiteSpace(host) ? "0.0.0.0" : host;
+        return StartAsync(host, port, cancellationToken?.Token ?? CancellationToken.None);
+    }
 
-        while (!_cancellationTokenSource.IsCancellationRequested)
+    public async Task StartAsync(string? host, int port, CancellationToken cancellationToken)
+    {
+        if (port is < IPEndPoint.MinPort or > IPEndPoint.MaxPort)
         {
+            throw new ArgumentOutOfRangeException(nameof(port));
+        }
+
+        var listenIp = string.IsNullOrWhiteSpace(host) ? "127.0.0.1" : host;
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await StopSessionAsync(_session).ConfigureAwait(false);
+            ClearState();
+            _session = new ServerSession(_options);
+            var session = _session;
+            ConnectStatus = ConnectStatus.IsConnecting;
+            session.InboundTask = ProcessInboundCommandsAsync(session);
+            session.OutboundTask = ProcessOutboundCommandsAsync(session);
+            session.CleanupTask = CleanupPendingQueriesAsync(session);
+
             try
             {
-                DisposeServerCommandRegistration();
-                _server?.StopAsync().GetAwaiter().GetResult();
-                _server = new TcpSocketServer();
-                var (isSuccess, errorMessage) = await _server.StartAsync(nameof(EventServer), listenIp, port);
+                var server = new TcpSocketServer();
+                session.Server = server;
+                var (isSuccess, errorMessage) = await server.StartAsync(
+                    nameof(EventServer), listenIp, port).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
                 if (!isSuccess)
                 {
-                    throw new Exception(errorMessage ?? "事件服务启动失败。");
+                    throw new InvalidOperationException(errorMessage ?? "事件服务启动失败。");
                 }
 
-                _serverCommandRegistration = _server.RegisterCommandHandler(HandleSocketCommandAsync);
+                session.CommandRegistration = server.RegisterCommandHandler(
+                    (clientKey, tcpSession, command) => HandleSocketCommandAsync(session, clientKey, tcpSession, command));
                 ConnectStatus = ConnectStatus.Connected;
-                return;
+            }
+            catch (OperationCanceledException)
+            {
+                await StopSessionAsync(session).ConfigureAwait(false);
+                ClearState();
+                ConnectStatus = ConnectStatus.Disconnected;
+                throw;
             }
             catch (Exception ex)
             {
+                _options.Report("启动事件服务失败", ex);
+                await StopSessionAsync(session).ConfigureAwait(false);
+                ClearState();
                 ConnectStatus = ConnectStatus.Disconnected;
-                Debug.WriteLine($"TCP 服务启动异常，将在 {RestartInterval / 1000} 秒后重启：{ex.Message}");
-                await Task.Delay(TimeSpan.FromMilliseconds(RestartInterval));
+                throw;
             }
+        }
+        finally
+        {
+            _lifecycleGate.Release();
         }
     }
 
     public void Stop()
     {
+        _lifecycleGate.Wait();
         try
         {
-            _cancellationTokenSource?.Cancel();
-            DisposeServerCommandRegistration();
-            _server?.StopAsync().GetAwaiter().GetResult();
-            _server = null;
-        }
-        catch
-        {
-            // ignored
+            StopSessionAsync(_session).GetAwaiter().GetResult();
+            _session = null;
+            ClearState();
+            ConnectStatus = ConnectStatus.Disconnected;
         }
         finally
         {
-            ConnectStatus = ConnectStatus.Disconnected;
-            _inboundCommands.Writer.TryComplete();
-            _outboundCommands.Writer.TryComplete();
-            _pendingQueries.Clear();
-            _subscribedSubjectAndClients.Clear();
+            _lifecycleGate.Release();
         }
     }
 
-    #endregion
-
-    #region private methods
-
-    private Task<bool> HandleSocketCommandAsync(string clientKey, TcpSession session, SocketCommand command)
+    private Task<bool> HandleSocketCommandAsync(
+        ServerSession session,
+        string clientKey,
+        TcpSession tcpSession,
+        SocketCommand command)
     {
-        // 当前处理器注册在 TcpSocketServer 实例上，不再需要经过全局 EventBus 后按服务端口过滤。
-        _inboundCommands.Writer.TryWrite(command);
-        return Task.FromResult(true);
-    }
-
-    private void RemoveClient(System.Net.Sockets.Socket tcpClient)
-    {
-        // 连接失效时，同时清理订阅关系和该连接尚未完成的查询，避免留下悬挂映射。
-        foreach (var subject in _subscribedSubjectAndClients)
+        if (!ReferenceEquals(_session, session) || session.Cancellation.IsCancellationRequested)
         {
-            subject.Value.Remove(tcpClient);
+            return Task.FromResult(false);
         }
 
-        foreach (var pendingQuery in _pendingQueries.Where(x => x.Value.Client == tcpClient).ToArray())
+        var accepted = session.Inbound.Writer.TryWrite(command);
+        if (!accepted)
         {
-            _pendingQueries.TryRemove(pendingQuery.Key, out _);
+            _options.Report($"服务端入站队列已满，客户端 {clientKey} 的命令被拒绝");
         }
+
+        return Task.FromResult(accepted);
     }
 
-    private void ResetPipelines()
+    private async Task ProcessInboundCommandsAsync(ServerSession session)
     {
-        _inboundCommands = CreateInboundCommandChannel();
-        _outboundCommands = CreateOutboundCommandChannel();
-        _ = Task.Run(ProcessInboundCommandsAsync);
-        _ = Task.Run(ProcessOutboundCommandsAsync);
-    }
-
-    private async Task ProcessInboundCommandsAsync()
-    {
-        var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
-
         try
         {
-            await foreach (var command in _inboundCommands.Reader.ReadAllAsync(cancellationToken))
+            await foreach (var command in session.Inbound.Reader.ReadAllAsync(session.Cancellation.Token)
+                               .ConfigureAwait(false))
             {
                 var socketClient = command.Client;
-                if (socketClient == null)
+                if (socketClient is null)
                 {
                     continue;
                 }
@@ -167,307 +171,413 @@ public class EventServer : IEventServer
                 {
                     if (command.IsCommand<RequestIsEventServer>())
                     {
-                        HandleRequest(socketClient, command.GetCommand<RequestIsEventServer>());
+                        HandleRequest(session, socketClient, command.GetCommand<RequestIsEventServer>());
+                    }
+                    else if (!IsAuthorized(socketClient))
+                    {
+                        _options.Report("拒绝未完成握手的客户端命令");
                     }
                     else if (command.IsCommand<RequestSubscribe>())
                     {
-                        HandleRequest(socketClient, command.GetCommand<RequestSubscribe>());
+                        HandleRequest(session, socketClient, command.GetCommand<RequestSubscribe>());
                     }
                     else if (command.IsCommand<RequestUnsubscribe>())
                     {
-                        HandleRequest(socketClient, command.GetCommand<RequestUnsubscribe>());
+                        HandleRequest(session, socketClient, command.GetCommand<RequestUnsubscribe>());
                     }
                     else if (command.IsCommand<RequestPublish>())
                     {
-                        HandleRequest(socketClient, command.GetCommand<RequestPublish>());
+                        HandleRequest(session, socketClient, command.GetCommand<RequestPublish>());
                     }
                     else if (command.IsCommand<RequestQuery>())
                     {
-                        HandleRequest(socketClient, command.GetCommand<RequestQuery>());
+                        HandleRequest(session, socketClient, command.GetCommand<RequestQuery>());
                     }
                     else if (command.IsCommand<Heartbeat>())
                     {
-                        HandleRequest(socketClient, command.GetCommand<Heartbeat>());
+                        HandleRequest(session, socketClient, command.GetCommand<Heartbeat>());
                     }
-                }
-                catch (SocketException ex)
-                {
-                    Debug.WriteLine($"远程主机异常，客户端将被移除：{ex.Message}");
-                    RemoveClient(socketClient);
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"处理客户端请求异常：{ex.Message}");
+                    _options.Report("处理客户端命令失败", ex);
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (session.Cancellation.IsCancellationRequested)
         {
-            // 停止服务时允许消费者自然退出。
         }
     }
 
-    private async Task ProcessOutboundCommandsAsync()
+    private async Task ProcessOutboundCommandsAsync(ServerSession session)
     {
-        var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
-
         try
         {
-            await foreach (var command in _outboundCommands.Reader.ReadAllAsync(cancellationToken))
+            await foreach (var command in session.Outbound.Reader.ReadAllAsync(session.Cancellation.Token)
+                               .ConfigureAwait(false))
             {
                 try
                 {
-                    if (_server == null)
+                    if (session.Server is not null)
                     {
-                        continue;
+                        await session.Server.SendCommandAsync(command.Client, command.Command).ConfigureAwait(false);
                     }
-
-                    await _server.SendCommandAsync(command.Client, command.Command);
                 }
                 catch (SocketException ex)
                 {
-                    Debug.WriteLine($"发送命令异常，客户端将被移除：{ex.Message}");
+                    _options.Report("发送服务端命令失败，客户端将被移除", ex);
                     RemoveClient(command.Client);
                 }
                 catch (Exception ex)
                 {
-                    Debug.WriteLine($"发送命令异常：{ex.Message}");
+                    _options.Report("发送服务端命令失败", ex);
                 }
             }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (session.Cancellation.IsCancellationRequested)
         {
-            // 停止服务时允许消费者自然退出。
         }
     }
 
-    private void HandleRequest(System.Net.Sockets.Socket tcpClient, RequestIsEventServer command)
+    private async Task CleanupPendingQueriesAsync(ServerSession session)
     {
         try
         {
-            SendCommand(tcpClient, new ResponseCommon
+            using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            while (await timer.WaitForNextTickAsync(session.Cancellation.Token).ConfigureAwait(false))
+            {
+                var now = DateTimeOffset.UtcNow;
+                foreach (var pair in _pendingQueries)
+                {
+                    if (pair.Value.ExpiresAt > now || !_pendingQueries.TryRemove(pair.Key, out var pendingQuery))
+                    {
+                        continue;
+                    }
+
+                    _ = pendingQuery;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (session.Cancellation.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void HandleRequest(ServerSession session, System.Net.Sockets.Socket client, RequestIsEventServer command)
+    {
+        if (!string.IsNullOrWhiteSpace(_options.AuthenticationToken) &&
+            !string.Equals(command.AuthenticationToken, _options.AuthenticationToken, StringComparison.Ordinal))
+        {
+            SendCommand(session, client, new ResponseCommon
             {
                 TaskId = command.TaskId,
-                Status = (byte)ResponseCommonStatus.Success
+                Status = (byte)ResponseCommonStatus.Fail,
+                Message = "客户端认证失败。"
             });
+            return;
         }
-        catch (Exception ex)
+
+        _authorizedClients[client] = 0;
+        SendCommand(session, client, new ResponseCommon
         {
-            Debug.WriteLine($"发送命令异常：{ex.Message}");
-        }
+            TaskId = command.TaskId,
+            Status = (byte)ResponseCommonStatus.Success
+        });
     }
 
-    private void HandleRequest(System.Net.Sockets.Socket client, RequestSubscribe command)
+    private void HandleRequest(ServerSession session, System.Net.Sockets.Socket client, RequestSubscribe command)
     {
-        try
+        ValidateRequest(command.Subject, null);
+        lock (_subscriptionSync)
         {
             if (!_subscribedSubjectAndClients.TryGetValue(command.Subject, out var sockets))
             {
-                sockets = [client];
-                _subscribedSubjectAndClients.TryAdd(command.Subject, sockets);
-            }
-            else if (!sockets.Contains(client))
-            {
-                sockets.Add(client);
+                sockets = new HashSet<System.Net.Sockets.Socket>();
+                _subscribedSubjectAndClients.Add(command.Subject, sockets);
             }
 
-            SendCommand(client, new ResponseCommon
-            {
-                TaskId = command.TaskId,
-                Status = (byte)ResponseCommonStatus.Success
-            });
+            sockets.Add(client);
         }
-        catch (Exception ex)
+
+        SendCommand(session, client, new ResponseCommon
         {
-            Debug.WriteLine($"处理订阅请求异常：{ex.Message}");
-        }
+            TaskId = command.TaskId,
+            Status = (byte)ResponseCommonStatus.Success
+        });
     }
 
-    private void HandleRequest(System.Net.Sockets.Socket client, RequestUnsubscribe command)
+    private void HandleRequest(ServerSession session, System.Net.Sockets.Socket client, RequestUnsubscribe command)
     {
-        try
+        ValidateRequest(command.Subject, null);
+        lock (_subscriptionSync)
         {
             if (_subscribedSubjectAndClients.TryGetValue(command.Subject, out var sockets))
             {
                 sockets.Remove(client);
+                if (sockets.Count == 0)
+                {
+                    _subscribedSubjectAndClients.Remove(command.Subject);
+                }
             }
+        }
 
-            SendCommand(client, new ResponseCommon
-            {
-                TaskId = command.TaskId,
-                Status = (byte)ResponseCommonStatus.Success
-            });
-        }
-        catch (Exception ex)
+        SendCommand(session, client, new ResponseCommon
         {
-            Debug.WriteLine($"处理取消订阅请求异常：{ex.Message}");
-        }
+            TaskId = command.TaskId,
+            Status = (byte)ResponseCommonStatus.Success
+        });
     }
 
-    private void HandleRequest(System.Net.Sockets.Socket client, RequestPublish command)
+    private void HandleRequest(ServerSession session, System.Net.Sockets.Socket client, RequestPublish command)
     {
-        try
+        ValidateRequest(command.Subject, command.Buffer);
+        if (!string.IsNullOrWhiteSpace(command.QueryTaskId))
         {
-            if (!string.IsNullOrWhiteSpace(command.QueryTaskId))
-            {
-                // 带 QueryTaskId 的 Publish 不是普通广播，而是某个查询的定向响应。
-                HandleQueryResponse(client, command);
-                return;
-            }
-
-            PublishToSubscribers(command);
-
-            SendCommand(client, new ResponseCommon
-            {
-                TaskId = command.TaskId,
-                Status = (byte)ResponseCommonStatus.Success
-            });
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"处理发布请求异常：{ex.Message}");
-        }
-    }
-
-    private void HandleRequest(System.Net.Sockets.Socket client, RequestQuery query)
-    {
-        try
-        {
-            // 先记住查询是谁发起的，再把请求转给订阅者。
-            _pendingQueries[query.TaskId] = new PendingQuery(query.Subject, client);
-            PublishQueryToSubscribers(query);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"处理查询请求异常：{ex.Message}");
-        }
-    }
-
-    private void HandleRequest(System.Net.Sockets.Socket client, Heartbeat command)
-    {
-        try
-        {
-            SendCommand(client, command);
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"处理心跳请求异常：{ex.Message}");
-        }
-    }
-
-    private void PublishToSubscribers(RequestPublish @event)
-    {
-        if (!_subscribedSubjectAndClients.TryGetValue(@event.Subject, out var clients))
-        {
+            HandleQueryResponse(session, client, command);
             return;
         }
 
+        PublishToSubscribers(session, command);
+        SendCommand(session, client, new ResponseCommon
+        {
+            TaskId = command.TaskId,
+            Status = (byte)ResponseCommonStatus.Success
+        });
+    }
+
+    private void HandleRequest(ServerSession session, System.Net.Sockets.Socket client, RequestQuery query)
+    {
+        ValidateRequest(query.Subject, query.Buffer);
+        var pendingQuery = new PendingQuery(
+            query.Subject,
+            client,
+            DateTimeOffset.UtcNow.Add(_options.PendingQueryTimeout));
+        if (!_pendingQueries.TryAdd(query.TaskId, pendingQuery))
+        {
+            throw new InvalidOperationException("查询 TaskId 已存在。");
+        }
+
+        if (!PublishQueryToSubscribers(session, query))
+        {
+            _pendingQueries.TryRemove(query.TaskId, out _);
+        }
+    }
+
+    private void HandleRequest(ServerSession session, System.Net.Sockets.Socket client, Heartbeat command)
+    {
+        SendCommand(session, client, command);
+    }
+
+    private void PublishToSubscribers(ServerSession session, RequestPublish @event)
+    {
+        var clients = GetSubscribers(@event.Subject);
         var updateEvent = new UpdateEvent
         {
             TaskId = @event.TaskId,
             Subject = @event.Subject,
-            // 普通发布只需要广播给订阅者，不应触发查询响应逻辑。
             IsQueryRequest = false,
             Buffer = @event.Buffer
         };
 
-        for (var i = clients.Count - 1; i >= 0; i--)
+        foreach (var client in clients)
         {
-            SendCommand(clients[i], updateEvent);
+            SendCommand(session, client, updateEvent);
         }
     }
 
-    private void PublishQueryToSubscribers(RequestQuery query)
+    private bool PublishQueryToSubscribers(ServerSession session, RequestQuery query)
     {
-        if (!_subscribedSubjectAndClients.TryGetValue(query.Subject, out var clients))
+        var clients = GetSubscribers(query.Subject);
+        if (clients.Length == 0)
         {
-            return;
+            return false;
         }
 
         var updateEvent = new UpdateEvent
         {
             TaskId = query.TaskId,
             Subject = query.Subject,
-            // 客户端据此知道当前正在处理“查询请求”，后续 Publish 需要回填 QueryTaskId。
             IsQueryRequest = true,
             Buffer = query.Buffer
         };
 
-        for (var i = clients.Count - 1; i >= 0; i--)
+        foreach (var client in clients)
         {
-            SendCommand(clients[i], updateEvent);
+            SendCommand(session, client, updateEvent);
+        }
+
+        return true;
+    }
+
+    private void HandleQueryResponse(
+        ServerSession session,
+        System.Net.Sockets.Socket responder,
+        RequestPublish response)
+    {
+        if (string.IsNullOrWhiteSpace(response.QueryTaskId) ||
+            !_pendingQueries.TryGetValue(response.QueryTaskId, out var pendingQuery) ||
+            !string.Equals(pendingQuery.Subject, response.Subject, StringComparison.Ordinal) ||
+            !IsSubscribed(response.Subject, responder) ||
+            !_pendingQueries.TryRemove(response.QueryTaskId, out pendingQuery))
+        {
+            _options.Report($"忽略无效或重复的查询响应：{response.QueryTaskId}");
+            return;
+        }
+
+        SendCommand(session, pendingQuery.Client, new UpdateEvent
+        {
+            TaskId = response.QueryTaskId,
+            Subject = pendingQuery.Subject,
+            Buffer = response.Buffer
+        });
+        SendCommand(session, responder, new ResponseCommon
+        {
+            TaskId = response.TaskId,
+            Status = (byte)ResponseCommonStatus.Success
+        });
+    }
+
+    private void RemoveClient(System.Net.Sockets.Socket tcpClient)
+    {
+        _authorizedClients.TryRemove(tcpClient, out _);
+        lock (_subscriptionSync)
+        {
+            foreach (var subject in _subscribedSubjectAndClients.Keys.ToArray())
+            {
+                var sockets = _subscribedSubjectAndClients[subject];
+                sockets.Remove(tcpClient);
+                if (sockets.Count == 0)
+                {
+                    _subscribedSubjectAndClients.Remove(subject);
+                }
+            }
+        }
+
+        foreach (var pendingQuery in _pendingQueries.Where(x => x.Value.Client == tcpClient).ToArray())
+        {
+            _pendingQueries.TryRemove(pendingQuery.Key, out _);
         }
     }
 
-    private void HandleQueryResponse(System.Net.Sockets.Socket responder, RequestPublish response)
+    private void SendCommand(ServerSession session, System.Net.Sockets.Socket client, INetObject command)
     {
-        if (string.IsNullOrWhiteSpace(response.QueryTaskId))
+        if (!session.Outbound.Writer.TryWrite(new OutboundCommand(client, command)))
+        {
+            RemoveClient(client);
+            throw new InvalidOperationException("服务端发送队列已关闭或已满。");
+        }
+    }
+
+    private bool IsAuthorized(System.Net.Sockets.Socket client)
+    {
+        return _authorizedClients.ContainsKey(client);
+    }
+
+    private bool IsSubscribed(string subject, System.Net.Sockets.Socket client)
+    {
+        lock (_subscriptionSync)
+        {
+            return _subscribedSubjectAndClients.TryGetValue(subject, out var clients) && clients.Contains(client);
+        }
+    }
+
+    private System.Net.Sockets.Socket[] GetSubscribers(string subject)
+    {
+        lock (_subscriptionSync)
+        {
+            return _subscribedSubjectAndClients.TryGetValue(subject, out var clients)
+                ? clients.ToArray()
+                : Array.Empty<System.Net.Sockets.Socket>();
+        }
+    }
+
+    private async Task StopSessionAsync(ServerSession? session)
+    {
+        if (session is null)
         {
             return;
         }
 
-        if (!_pendingQueries.TryRemove(response.QueryTaskId, out var pendingQuery))
+        if (Interlocked.Exchange(ref session.Stopped, 1) != 0)
         {
-            // 查询已超时、已返回或请求方已断开时，忽略迟到响应，避免误广播。
-            Debug.WriteLine($"收到已过期或重复的查询响应：{response.QueryTaskId}");
             return;
         }
 
+        session.Cancellation.Cancel();
+        session.CommandRegistration?.Dispose();
+        session.CommandRegistration = null;
         try
         {
-            var updateEvent = new UpdateEvent
-            {
-                TaskId = response.QueryTaskId,
-                Subject = pendingQuery.Subject,
-                IsQueryRequest = false,
-                Buffer = response.Buffer
-            };
-
-            // 查询结果只回给原请求方，不广播给所有订阅者。
-            SendCommand(pendingQuery.Client, updateEvent);
-            SendCommand(responder, new ResponseCommon
-            {
-                TaskId = response.TaskId,
-                Status = (byte)ResponseCommonStatus.Success
-            });
+            session.Server?.StopAsync().GetAwaiter().GetResult();
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"处理查询响应异常：{ex.Message}");
+            _options.Report("关闭事件服务失败", ex);
+        }
+
+        session.Inbound.Writer.TryComplete();
+        session.Outbound.Writer.TryComplete();
+        try
+        {
+            await Task.WhenAll(session.InboundTask, session.OutboundTask, session.CleanupTask)
+                .WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        {
+            _options.Report("等待服务端后台任务退出超时", ex);
+        }
+        finally
+        {
+            session.Cancellation.Dispose();
         }
     }
 
-    private void SendCommand(System.Net.Sockets.Socket client, INetObject command)
+    private void RemoveClientState()
     {
-        if (!_outboundCommands.Writer.TryWrite(new OutboundCommand(client, command)))
+        _authorizedClients.Clear();
+        lock (_subscriptionSync)
         {
-            throw new Exception("服务端发送通道已关闭，无法继续发送命令。");
+            _subscribedSubjectAndClients.Clear();
+        }
+
+        _pendingQueries.Clear();
+    }
+
+    private void ClearState()
+    {
+        RemoveClientState();
+    }
+
+    private void ValidateRequest(string subject, byte[]? buffer)
+    {
+        if (string.IsNullOrWhiteSpace(subject) || subject.Length > _options.MaxSubjectLength)
+        {
+            throw new InvalidOperationException("主题不能为空且长度不能超过配置上限。");
+        }
+
+        if (buffer is not null && buffer.Length > _options.MaxMessageSizeBytes)
+        {
+            throw new InvalidOperationException("消息体超过配置大小限制。");
         }
     }
 
-    private static Channel<SocketCommand> CreateInboundCommandChannel()
+    private static Channel<SocketCommand> CreateInboundCommandChannel(EventBusOptions options)
     {
-        return Channel.CreateUnbounded<SocketCommand>(new UnboundedChannelOptions
+        return Channel.CreateBounded<SocketCommand>(new BoundedChannelOptions(options.InboundQueueCapacity)
         {
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
         });
     }
 
-    private static Channel<OutboundCommand> CreateOutboundCommandChannel()
+    private static Channel<OutboundCommand> CreateOutboundCommandChannel(EventBusOptions options)
     {
-        return Channel.CreateUnbounded<OutboundCommand>(new UnboundedChannelOptions
+        return Channel.CreateBounded<OutboundCommand>(new BoundedChannelOptions(options.OutboundQueueCapacity)
         {
             SingleReader = true,
-            SingleWriter = false
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
         });
     }
-
-    private void DisposeServerCommandRegistration()
-    {
-        _serverCommandRegistration?.Dispose();
-        _serverCommandRegistration = null;
-    }
-
-    #endregion
 }

@@ -7,6 +7,7 @@ public interface IEventClient
     ConnectStatus ConnectStatus { get; }
     void Connect(string host, int port);
     Task<bool> ConnectAsync(string host, int port);
+    Task<bool> ConnectAsync(string host, int port, CancellationToken cancellationToken);
     void Disconnect();
 
     void Subscribe<T>(string subject, Action<T> eventHandler);
@@ -26,8 +27,8 @@ public interface IEventClient
 
 public enum ConnectStatus
 {
+    Disconnected,
     IsConnecting,
     Connected,
-    Disconnected,
     DisconnectedNeedCheckEventServer
 }

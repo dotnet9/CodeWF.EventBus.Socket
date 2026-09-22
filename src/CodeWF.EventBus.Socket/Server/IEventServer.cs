@@ -7,5 +7,6 @@ public interface IEventServer
     ConnectStatus ConnectStatus { get; }
     void Start(string? host = "127.0.0.1", int port = 5000);
     Task StartAsync(string? host = "127.0.0.1", int port = 5000, CancellationTokenSource? cancellationToken = null);
+    Task StartAsync(string? host, int port, CancellationToken cancellationToken);
     void Stop();
 }

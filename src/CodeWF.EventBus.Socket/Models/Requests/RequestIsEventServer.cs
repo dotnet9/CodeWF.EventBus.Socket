@@ -4,4 +4,6 @@
 internal class RequestIsEventServer : INetObject
 {
     public string TaskId { get; set; } = null!;
+
+    public string? AuthenticationToken { get; set; }
 }

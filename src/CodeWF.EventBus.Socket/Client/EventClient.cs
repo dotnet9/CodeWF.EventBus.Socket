@@ -5,126 +5,105 @@ namespace CodeWF.EventBus.Socket;
 
 public class EventClient : IEventClient
 {
-    private const int ReconnectInterval = 3000;
-    private const int HeartbeatInterval = 5000;
-    private const int MaxTrySendHeartTime = 3;
+    private const int HandshakeTimeoutMilliseconds = 3000;
 
-    // 当前线程是否正处于“处理查询请求”的上下文中。
-    // 这样订阅处理器内部直接调用 Publish 时，客户端就能自动带上原查询 TaskId。
+    private readonly EventBusOptions _options;
     private readonly AsyncLocal<QueryResponseContext?> _queryResponseContext = new();
-    // 查询发起方本地缓存，键为查询 TaskId，值为该查询专属的响应通道。
     private readonly ConcurrentDictionary<string, Channel<UpdateEvent>> _queryResponseChannels = new();
-    // 每个主题在本地注册的处理器列表。
-    private readonly ConcurrentDictionary<string, List<Delegate>> _subjectAndHandlers = new();
-
+    private readonly Dictionary<string, List<Delegate>> _subjectAndHandlers = new(StringComparer.Ordinal);
+    private readonly object _subscriptionSync = new();
+    private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
+    private readonly object _reconnectSync = new();
     private readonly Func<TcpClientErrorCommand, Task> _clientErrorHandler;
 
-    private Channel<SocketCommand> _inboundCommands = CreateInboundCommandChannel();
-    private Channel<OutboundCommand> _outboundCommands = CreateOutboundCommandChannel();
-    private CancellationTokenSource? _cancellationTokenSource;
-    private TcpSocketClient? _client;
-    private IDisposable? _clientCommandRegistration;
+    private ClientSession? _session;
+    private CancellationTokenSource? _reconnectCancellation;
+    private Task? _reconnectTask;
     private string? _host;
     private int _port;
-    // 连接建立后先做一次轻量握手，确认对端真的是事件总线服务。
-    private TaskCompletionSource<bool>? _eventServerHandshakeCompletion;
-    private string? _requestIsEventServerTaskId;
-    private int _trySendHeartbeatTimes;
-    private int _reconnectScheduled;
     private bool _isSubscribedToClientErrorEvents;
+
+    private sealed class ClientSession
+    {
+        public ClientSession(EventBusOptions options)
+        {
+            Cancellation = new CancellationTokenSource();
+            Inbound = CreateInboundCommandChannel(options);
+            Outbound = CreateOutboundCommandChannel(options);
+        }
+
+        public CancellationTokenSource Cancellation { get; }
+        public Channel<SocketCommand> Inbound { get; }
+        public Channel<OutboundCommand> Outbound { get; }
+        public TcpSocketClient? Client { get; set; }
+        public IDisposable? CommandRegistration { get; set; }
+        public Task InboundTask { get; set; } = Task.CompletedTask;
+        public Task OutboundTask { get; set; } = Task.CompletedTask;
+        public Task HeartbeatTask { get; set; } = Task.CompletedTask;
+        public TaskCompletionSource<bool>? HandshakeCompletion { get; set; }
+        public string? HandshakeTaskId { get; set; }
+        public int ReconnectScheduled;
+        public int Stopped;
+    }
 
     private sealed record QueryResponseContext(string Subject, string TaskId);
     private sealed record OutboundCommand(INetObject Command, bool NeedCheckConnectStatus);
 
-    public EventClient()
+    public EventClient(EventBusOptions? options = null)
     {
+        _options = options ?? new EventBusOptions();
+        _options.Validate();
         _clientErrorHandler = HandleClientErrorAsync;
     }
 
-    #region interface methods
-
-    public ConnectStatus ConnectStatus { get; private set; }
+    public ConnectStatus ConnectStatus { get; private set; } = ConnectStatus.Disconnected;
 
     public void Connect(string host, int port)
     {
-        ConnectAsync(host, port).Wait(TimeSpan.FromSeconds(3));
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        var connected = ConnectAsync(host, port, timeout.Token).GetAwaiter().GetResult();
+        if (!connected)
+        {
+            throw new TimeoutException("连接事件服务超时。");
+        }
     }
 
-    public async Task<bool> ConnectAsync(string host, int port)
+    public Task<bool> ConnectAsync(string host, int port)
     {
-        _host = host;
-        _port = port;
+        return ConnectAsync(host, port, CancellationToken.None);
+    }
 
-        // 每次连接或重连都重建通道和后台消费者，避免沿用已关闭的管道。
-        _cancellationTokenSource = new CancellationTokenSource();
-        ConnectStatus = ConnectStatus.IsConnecting;
-        ResetPipelines();
-        EnsureClientErrorSubscription();
+    public async Task<bool> ConnectAsync(string host, int port, CancellationToken cancellationToken)
+    {
+        ValidateEndpoint(host, port);
+        await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
-        while (!_cancellationTokenSource.IsCancellationRequested)
+        try
         {
-            try
-            {
-                DisposeClientCommandRegistration();
-                _client?.Stop();
-                _client = new TcpSocketClient();
-                var (isSuccess, errorMessage) = await _client.ConnectAsync(nameof(EventClient), host, port);
-                if (!isSuccess)
-                {
-                    throw new Exception(errorMessage ?? "连接事件总线服务失败。");
-                }
-
-                _clientCommandRegistration = _client.RegisterCommandHandler(HandleSocketCommandAsync);
-                Interlocked.Exchange(ref _reconnectScheduled, 0);
-                await CheckIsEventServerAsync();
-                return ConnectStatus == ConnectStatus.Connected;
-            }
-            catch (SocketException ex)
-            {
-                DisposeClientCommandRegistration();
-                _client?.Stop();
-                Debug.WriteLine($"TCP 服务连接异常，将在 {ReconnectInterval / 1000} 秒后重新连接：{ex.Message}");
-                await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval), CancellationToken.None);
-            }
-            catch (Exception ex)
-            {
-                DisposeClientCommandRegistration();
-                _client?.Stop();
-                Debug.WriteLine($"事件服务连接异常：{ex.Message}");
-                ConnectStatus = ConnectStatus.Disconnected;
-                await Task.Delay(TimeSpan.FromMilliseconds(ReconnectInterval), CancellationToken.None);
-            }
+            StopReconnectLoop();
+            return await ConnectCoreAsync(host, port, cancellationToken).ConfigureAwait(false);
         }
-
-        return false;
+        finally
+        {
+            _lifecycleGate.Release();
+        }
     }
 
     public void Disconnect()
     {
+        _lifecycleGate.Wait();
         try
         {
-            // 先通知后台循环退出，再关闭底层连接。
-            _cancellationTokenSource?.Cancel();
-            DisposeClientCommandRegistration();
-            _client?.Stop();
-            _client = null;
-        }
-        catch
-        {
-            // ignored
+            StopReconnectLoop();
+            StopSessionAsync(_session).GetAwaiter().GetResult();
+            _session = null;
+            CompleteQueryChannels();
+            RemoveClientErrorSubscription();
+            ConnectStatus = ConnectStatus.Disconnected;
         }
         finally
         {
-            ConnectStatus = ConnectStatus.Disconnected;
-            _eventServerHandshakeCompletion?.TrySetCanceled();
-            _eventServerHandshakeCompletion = null;
-            _requestIsEventServerTaskId = null;
-            Interlocked.Exchange(ref _trySendHeartbeatTimes, 0);
-            Interlocked.Exchange(ref _reconnectScheduled, 0);
-            _inboundCommands.Writer.TryComplete();
-            _outboundCommands.Writer.TryComplete();
-            CompleteQueryChannels();
-            RemoveClientErrorSubscription();
+            _lifecycleGate.Release();
         }
     }
 
@@ -140,44 +119,12 @@ public class EventClient : IEventClient
 
     public void Unsubscribe<T>(string subject, Action<T> eventHandler)
     {
-        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
-        {
-            return;
-        }
-
-        handlers.Remove(eventHandler);
-        if (handlers.Count > 0)
-        {
-            return;
-        }
-
-        _subjectAndHandlers.TryRemove(subject, out _);
-        SendCommand(new RequestUnsubscribe
-        {
-            TaskId = SocketHelper.GetNewTaskId(),
-            Subject = subject
-        });
+        RemoveSubscribe(subject, eventHandler);
     }
 
     public void Unsubscribe<T>(string subject, Func<T, Task> asyncEventHandler)
     {
-        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
-        {
-            return;
-        }
-
-        handlers.Remove(asyncEventHandler);
-        if (handlers.Count > 0)
-        {
-            return;
-        }
-
-        _subjectAndHandlers.TryRemove(subject, out _);
-        SendCommand(new RequestUnsubscribe
-        {
-            TaskId = SocketHelper.GetNewTaskId(),
-            Subject = subject
-        });
+        RemoveSubscribe(subject, asyncEventHandler);
     }
 
     public bool Publish<T>(string subject, T message, out string errorMessage)
@@ -185,21 +132,23 @@ public class EventClient : IEventClient
         errorMessage = string.Empty;
         try
         {
-            // 如果当前 Publish 发生在查询处理器内部，则把原查询 TaskId 透传给服务端。
-            // 这样服务端就会把它识别为查询响应，而不是普通广播事件。
+            ValidateSubject(subject);
+            var buffer = message is null ? null : message.SerializeObject(typeof(T));
+            ValidateBuffer(buffer);
+
             SendCommand(new RequestPublish
             {
                 TaskId = SocketHelper.GetNewTaskId(),
                 Subject = subject,
                 QueryTaskId = GetCurrentQueryTaskId(subject),
-                Buffer = message is null ? null : message.SerializeObject(typeof(T))
+                Buffer = buffer
             });
             return true;
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
-            Debug.WriteLine(ex.Message);
+            Report("发布事件失败", ex);
             return false;
         }
     }
@@ -207,60 +156,61 @@ public class EventClient : IEventClient
     public async Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(
         string subject,
         TQuery message,
-        int overtimeMilliseconds)
+        int overtimeMilliseconds = 3000)
     {
-        var errorMessage = string.Empty;
         var taskId = SocketHelper.GetNewTaskId();
-
         try
         {
+            ValidateSubject(subject);
+            if (overtimeMilliseconds <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(overtimeMilliseconds));
+            }
+
             var request = new RequestQuery
             {
                 TaskId = taskId,
                 Subject = subject,
-                Buffer = message.SerializeObject()
+                Buffer = message is null ? null : message.SerializeObject()
             };
+            ValidateBuffer(request.Buffer);
+
             var responseChannel = Channel.CreateBounded<UpdateEvent>(new BoundedChannelOptions(1)
             {
                 SingleReader = true,
                 SingleWriter = true,
-                // 查询语义只关心最后一条响应，理论上也只应收到一条响应。
                 FullMode = BoundedChannelFullMode.DropOldest
             });
 
-            _queryResponseChannels[request.TaskId] = responseChannel;
+            _queryResponseChannels[taskId] = responseChannel;
             SendCommand(request);
 
             using var timeoutCancellation = new CancellationTokenSource(overtimeMilliseconds);
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-                _cancellationTokenSource?.Token ?? CancellationToken.None,
+                GetSessionCancellationToken(),
                 timeoutCancellation.Token);
 
-            var updateEvent = await responseChannel.Reader.ReadAsync(linkedCancellation.Token);
-            if (updateEvent.Buffer != null)
+            var updateEvent = await responseChannel.Reader.ReadAsync(linkedCancellation.Token).ConfigureAwait(false);
+            if (updateEvent.Buffer is null)
             {
-                var response = updateEvent.Buffer.DeserializeObject(typeof(TResponse));
-                return response is TResponse typedResponse
-                    ? (typedResponse, string.Empty)
-                    : (default, "服务端响应反序列化失败。");
+                return (default, "未从服务端收到响应。");
             }
 
-            return (default, "未从服务端收到响应。");
+            var response = updateEvent.Buffer.DeserializeObject(typeof(TResponse));
+            return response is TResponse typedResponse
+                ? (typedResponse, string.Empty)
+                : (default, "服务端响应反序列化失败。");
         }
         catch (OperationCanceledException)
         {
-            if (_cancellationTokenSource?.IsCancellationRequested == true)
-            {
-                return (default, "操作已取消。");
-            }
-
-            return (default, "查询超时，请重试。");
+            return (default, ConnectStatus == ConnectStatus.Disconnected
+                ? "操作已取消。"
+                : "查询超时，请重试。");
         }
         catch (Exception ex)
         {
-            errorMessage = ex.Message;
-            Debug.WriteLine(ex.Message);
-            return (default, errorMessage);
+            Report("查询事件失败", ex);
+            return (default, ex.Message);
         }
         finally
         {
@@ -277,55 +227,491 @@ public class EventClient : IEventClient
         out string errorMessage,
         int overtimeMilliseconds = 3000)
     {
+        var result = QueryAsync<TQuery, TResponse>(subject, message, overtimeMilliseconds)
+            .ConfigureAwait(false)
+            .GetAwaiter()
+            .GetResult();
+        errorMessage = result.ErrorMessage;
+        return result.Result;
+    }
+
+    private async Task<bool> ConnectCoreAsync(string host, int port, CancellationToken cancellationToken)
+    {
+        await StopSessionAsync(_session).ConfigureAwait(false);
+        _session = new ClientSession(_options);
+        _host = host;
+        _port = port;
+        ConnectStatus = ConnectStatus.IsConnecting;
+        EnsureClientErrorSubscription();
+
+        var session = _session;
+        session.InboundTask = ProcessInboundCommandsAsync(session);
+        session.OutboundTask = ProcessOutboundCommandsAsync(session);
+
         try
         {
-            var result = QueryAsync<TQuery, TResponse>(subject, message, overtimeMilliseconds)
-                .ConfigureAwait(false)
-                .GetAwaiter()
-                .GetResult();
-            errorMessage = result.ErrorMessage;
-            return result.Result;
+            var client = new TcpSocketClient();
+            session.Client = client;
+            var (isSuccess, errorMessage) = await client.ConnectAsync(nameof(EventClient), host, port)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!isSuccess)
+            {
+                throw new InvalidOperationException(errorMessage ?? "连接事件总线服务失败。");
+            }
+
+            session.CommandRegistration = client.RegisterCommandHandler(
+                command => HandleSocketCommandAsync(session, command));
+            await CheckIsEventServerAsync(session, cancellationToken).ConfigureAwait(false);
+            await ResubscribeAsync(session, cancellationToken).ConfigureAwait(false);
+            ConnectStatus = ConnectStatus.Connected;
+            session.HeartbeatTask = HeartbeatLoopAsync(session);
+            return true;
+        }
+        catch (OperationCanceledException)
+        {
+            await StopSessionAsync(session).ConfigureAwait(false);
+            ConnectStatus = ConnectStatus.Disconnected;
+            return false;
         }
         catch (Exception ex)
         {
-            errorMessage = ex.Message;
-            return default;
+            _options.Report("连接事件服务失败", ex);
+            await StopSessionAsync(session).ConfigureAwait(false);
+            ConnectStatus = ConnectStatus.Disconnected;
+            return false;
         }
     }
 
-    #endregion
-
-    #region private methods
-
-    private void Reconnect()
+    private async Task CheckIsEventServerAsync(ClientSession session, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(_host))
+        session.HandshakeTaskId = SocketHelper.GetNewTaskId();
+        session.HandshakeCompletion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        SendCommand(session, new RequestIsEventServer
         {
-            return;
+            TaskId = session.HandshakeTaskId,
+            AuthenticationToken = _options.AuthenticationToken
+        }, false);
+
+        using var timeout = new CancellationTokenSource(HandshakeTimeoutMilliseconds);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            session.Cancellation.Token,
+            timeout.Token);
+        if (!await session.HandshakeCompletion.Task.WaitAsync(linked.Token).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("请检查事件总线服务认证配置。");
         }
 
-        Disconnect();
-        Connect(_host, _port);
+        session.HandshakeCompletion = null;
+        session.HandshakeTaskId = null;
+    }
+
+    private Task ResubscribeAsync(ClientSession session, CancellationToken cancellationToken)
+    {
+        string[] subjects;
+        lock (_subscriptionSync)
+        {
+            subjects = _subjectAndHandlers.Keys.ToArray();
+        }
+
+        foreach (var subject in subjects)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SendCommand(session, new RequestSubscribe
+            {
+                TaskId = SocketHelper.GetNewTaskId(),
+                Subject = subject
+            }, false);
+        }
+
+        return Task.CompletedTask;
     }
 
     private void AddSubscribe(string subject, Delegate eventHandler)
     {
-        if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
-        {
-            handlers = [eventHandler];
-            _subjectAndHandlers.TryAdd(subject, handlers);
+        ArgumentNullException.ThrowIfNull(eventHandler);
+        ValidateSubject(subject);
 
-            // 本地首个处理器注册时，才需要通知服务端建立远程订阅关系。
-            SendCommand(new RequestSubscribe
+        var shouldRegister = false;
+        lock (_subscriptionSync)
+        {
+            if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
+            {
+                handlers = new List<Delegate>();
+                _subjectAndHandlers.Add(subject, handlers);
+                shouldRegister = true;
+            }
+
+            handlers.Add(eventHandler);
+        }
+
+        if (shouldRegister && _session is { } session && ConnectStatus == ConnectStatus.Connected)
+        {
+            SendCommand(session, new RequestSubscribe
             {
                 TaskId = SocketHelper.GetNewTaskId(),
                 Subject = subject
             });
         }
-        else
+    }
+
+    private void RemoveSubscribe(string subject, Delegate eventHandler)
+    {
+        ArgumentNullException.ThrowIfNull(eventHandler);
+        ValidateSubject(subject);
+
+        var shouldUnregister = false;
+        lock (_subscriptionSync)
         {
-            handlers.Add(eventHandler);
+            if (!_subjectAndHandlers.TryGetValue(subject, out var handlers))
+            {
+                return;
+            }
+
+            handlers.Remove(eventHandler);
+            if (handlers.Count == 0)
+            {
+                _subjectAndHandlers.Remove(subject);
+                shouldUnregister = true;
+            }
         }
+
+        if (shouldUnregister && _session is { } session && ConnectStatus == ConnectStatus.Connected)
+        {
+            SendCommand(session, new RequestUnsubscribe
+            {
+                TaskId = SocketHelper.GetNewTaskId(),
+                Subject = subject
+            });
+        }
+    }
+
+    private Task<bool> HandleSocketCommandAsync(ClientSession session, SocketCommand command)
+    {
+        if (!ReferenceEquals(_session, session) || session.Cancellation.IsCancellationRequested)
+        {
+            return Task.FromResult(false);
+        }
+
+        var accepted = session.Inbound.Writer.TryWrite(command);
+        if (!accepted)
+        {
+            _options.Report("客户端入站队列已满");
+        }
+
+        return Task.FromResult(accepted);
+    }
+
+    private Task HandleClientErrorAsync(TcpClientErrorCommand error)
+    {
+        var session = _session;
+        if (session?.Client is null || !ReferenceEquals(error.Client, session.Client))
+        {
+            return Task.CompletedTask;
+        }
+
+        ConnectStatus = ConnectStatus.Disconnected;
+        _options.Report(error.ErrorMessage ?? "TCP 客户端连接异常");
+        ScheduleReconnect(session);
+        return Task.CompletedTask;
+    }
+
+    private async Task HeartbeatLoopAsync(ClientSession session)
+    {
+        try
+        {
+            while (!session.Cancellation.IsCancellationRequested)
+            {
+                SendCommand(session, new Heartbeat());
+                await Task.Delay(_options.HeartbeatInterval, session.Cancellation.Token).ConfigureAwait(false);
+            }
+        }
+        catch (OperationCanceledException) when (session.Cancellation.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            ConnectStatus = ConnectStatus.Disconnected;
+            _options.Report("发送心跳失败", ex);
+            ScheduleReconnect(session);
+        }
+    }
+
+    private async Task ProcessInboundCommandsAsync(ClientSession session)
+    {
+        try
+        {
+            await foreach (var command in session.Inbound.Reader.ReadAllAsync(session.Cancellation.Token)
+                               .ConfigureAwait(false))
+            {
+                try
+                {
+                    if (command.IsCommand<ResponseCommon>())
+                    {
+                        HandleResponse(session, command.GetCommand<ResponseCommon>());
+                    }
+                    else if (command.IsCommand<UpdateEvent>())
+                    {
+                        HandleResponse(command.GetCommand<UpdateEvent>());
+                    }
+                    else if (command.IsCommand<Heartbeat>())
+                    {
+                        HandleResponse(command.GetCommand<Heartbeat>());
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _options.Report("处理服务端响应失败", ex);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (session.Cancellation.IsCancellationRequested)
+        {
+        }
+    }
+
+    private async Task ProcessOutboundCommandsAsync(ClientSession session)
+    {
+        try
+        {
+            await foreach (var command in session.Outbound.Reader.ReadAllAsync(session.Cancellation.Token)
+                               .ConfigureAwait(false))
+            {
+                try
+                {
+                    if (command.NeedCheckConnectStatus &&
+                        (!ReferenceEquals(_session, session) || ConnectStatus != ConnectStatus.Connected))
+                    {
+                        continue;
+                    }
+
+                    if (session.Client is null)
+                    {
+                        continue;
+                    }
+
+                    await session.Client.SendCommandAsync(command.Command).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    ConnectStatus = ConnectStatus.Disconnected;
+                    _options.Report("发送事件失败", ex);
+                    ScheduleReconnect(session);
+                }
+            }
+        }
+        catch (OperationCanceledException) when (session.Cancellation.IsCancellationRequested)
+        {
+        }
+    }
+
+    private void HandleResponse(ClientSession session, ResponseCommon response)
+    {
+        if (session.HandshakeTaskId == response.TaskId)
+        {
+            session.HandshakeCompletion?.TrySetResult(response.Status == (byte)ResponseCommonStatus.Success);
+        }
+    }
+
+    private void HandleResponse(UpdateEvent response)
+    {
+        if (!response.IsQueryRequest &&
+            _queryResponseChannels.TryGetValue(response.TaskId, out var responseChannel))
+        {
+            responseChannel.Writer.TryWrite(response);
+            return;
+        }
+
+        Delegate[] handlers;
+        lock (_subscriptionSync)
+        {
+            if (!_subjectAndHandlers.TryGetValue(response.Subject, out var registeredHandlers))
+            {
+                return;
+            }
+
+            handlers = registeredHandlers.ToArray();
+        }
+
+        foreach (var handler in handlers)
+        {
+            try
+            {
+                var previousContext = _queryResponseContext.Value;
+                if (response.IsQueryRequest)
+                {
+                    _queryResponseContext.Value = new QueryResponseContext(response.Subject, response.TaskId);
+                }
+
+                try
+                {
+                    var parameter = handler.Method.GetParameters().First();
+                    var parameterValue = response.Buffer?.DeserializeObject(parameter.ParameterType);
+                    if (handler.Method.ReturnType == typeof(Task))
+                    {
+                        (handler.DynamicInvoke(parameterValue) as Task)?.GetAwaiter().GetResult();
+                    }
+                    else
+                    {
+                        handler.DynamicInvoke(parameterValue);
+                    }
+                }
+                finally
+                {
+                    _queryResponseContext.Value = previousContext;
+                }
+            }
+            catch (Exception ex)
+            {
+                _options.Report("分发订阅消息失败", ex);
+            }
+        }
+    }
+
+    private static void HandleResponse(Heartbeat response)
+    {
+    }
+
+    private void SendCommand(INetObject command, bool needCheckConnectStatus = true)
+    {
+        var session = _session ?? throw new InvalidOperationException("事件服务未连接。");
+        SendCommand(session, command, needCheckConnectStatus);
+    }
+
+    private static void SendCommand(ClientSession session, INetObject command, bool needCheckConnectStatus = true)
+    {
+        if (!session.Outbound.Writer.TryWrite(new OutboundCommand(command, needCheckConnectStatus)))
+        {
+            throw new InvalidOperationException("客户端发送队列已关闭或已满。");
+        }
+    }
+
+    private void ScheduleReconnect(ClientSession failedSession)
+    {
+        lock (_reconnectSync)
+        {
+            if (!ReferenceEquals(_session, failedSession) ||
+                failedSession.Cancellation.IsCancellationRequested ||
+                Interlocked.CompareExchange(ref failedSession.ReconnectScheduled, 1, 0) != 0)
+            {
+                return;
+            }
+
+            _reconnectCancellation = new CancellationTokenSource();
+            var reconnectCancellation = _reconnectCancellation;
+            _reconnectTask = Task.Run(() => ReconnectLoopAsync(reconnectCancellation));
+        }
+    }
+
+    private async Task ReconnectLoopAsync(CancellationTokenSource reconnectCancellation)
+    {
+        try
+        {
+            while (!reconnectCancellation.IsCancellationRequested && !string.IsNullOrWhiteSpace(_host))
+            {
+                await Task.Delay(_options.ReconnectInterval, reconnectCancellation.Token).ConfigureAwait(false);
+                var host = _host;
+                var port = _port;
+                if (host is null)
+                {
+                    return;
+                }
+
+                await _lifecycleGate.WaitAsync(reconnectCancellation.Token).ConfigureAwait(false);
+                try
+                {
+                    if (await ConnectCoreAsync(host, port, reconnectCancellation.Token).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                }
+                finally
+                {
+                    _lifecycleGate.Release();
+                }
+            }
+        }
+        catch (OperationCanceledException) when (reconnectCancellation.IsCancellationRequested)
+        {
+        }
+        finally
+        {
+            lock (_reconnectSync)
+            {
+                if (ReferenceEquals(_reconnectCancellation, reconnectCancellation))
+                {
+                    _reconnectCancellation = null;
+                }
+
+                _reconnectTask = null;
+            }
+
+            reconnectCancellation.Dispose();
+        }
+    }
+
+    private void StopReconnectLoop()
+    {
+        lock (_reconnectSync)
+        {
+            _reconnectCancellation?.Cancel();
+            _reconnectCancellation = null;
+            _reconnectTask = null;
+        }
+    }
+
+    private async Task StopSessionAsync(ClientSession? session)
+    {
+        if (session is null)
+        {
+            return;
+        }
+
+        if (Interlocked.Exchange(ref session.Stopped, 1) != 0)
+        {
+            return;
+        }
+
+        session.Cancellation.Cancel();
+        session.CommandRegistration?.Dispose();
+        session.CommandRegistration = null;
+        try
+        {
+            session.Client?.Stop();
+        }
+        catch (Exception ex)
+        {
+            _options.Report("关闭客户端连接失败", ex);
+        }
+
+        session.Inbound.Writer.TryComplete();
+        session.Outbound.Writer.TryComplete();
+
+        try
+        {
+            await Task.WhenAll(session.InboundTask, session.OutboundTask, session.HeartbeatTask)
+                .WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
+        {
+            _options.Report("等待客户端后台任务退出超时", ex);
+        }
+        finally
+        {
+            session.Cancellation.Dispose();
+        }
+    }
+
+    private void CompleteQueryChannels()
+    {
+        foreach (var channel in _queryResponseChannels.Values)
+        {
+            channel.Writer.TryComplete();
+        }
+
+        _queryResponseChannels.Clear();
     }
 
     private void EnsureClientErrorSubscription()
@@ -350,296 +736,70 @@ public class EventClient : IEventClient
         _isSubscribedToClientErrorEvents = false;
     }
 
-    private Task<bool> HandleSocketCommandAsync(SocketCommand command)
+    private CancellationToken GetSessionCancellationToken()
     {
-        // 当前处理器注册在 TcpSocketClient 实例上，不再需要走全局事件总线后按端点二次过滤。
-        _inboundCommands.Writer.TryWrite(command);
-        return Task.FromResult(true);
-    }
-
-    private Task HandleClientErrorAsync(TcpClientErrorCommand error)
-    {
-        if (!ReferenceEquals(error.Client, _client))
-        {
-            return Task.CompletedTask;
-        }
-
-        ConnectStatus = ConnectStatus.Disconnected;
-        Debug.WriteLine(error.ErrorMessage);
-        return Task.CompletedTask;
-    }
-
-    private void SendHeartbeat()
-    {
-        _ = Task.Run(async () =>
-        {
-            // 心跳请求也进入发送通道，避免在计时线程里直接阻塞等待网络发送。
-            while (_cancellationTokenSource is { IsCancellationRequested: false })
-            {
-                try
-                {
-                    SendCommand(new Heartbeat());
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"发送心跳入队失败：{ex.Message}");
-                }
-
-                await Task.Delay(TimeSpan.FromMilliseconds(HeartbeatInterval));
-            }
-        });
-    }
-
-    private void ResetPipelines()
-    {
-        _inboundCommands = CreateInboundCommandChannel();
-        _outboundCommands = CreateOutboundCommandChannel();
-        _ = Task.Run(ProcessInboundCommandsAsync);
-        _ = Task.Run(ProcessOutboundCommandsAsync);
-    }
-
-    private async Task ProcessInboundCommandsAsync()
-    {
-        var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
-
-        try
-        {
-            await foreach (var command in _inboundCommands.Reader.ReadAllAsync(cancellationToken))
-            {
-                try
-                {
-                    if (command.IsCommand<ResponseCommon>())
-                    {
-                        HandleResponse(command.GetCommand<ResponseCommon>());
-                    }
-                    else if (command.IsCommand<UpdateEvent>())
-                    {
-                        HandleResponse(command.GetCommand<UpdateEvent>());
-                    }
-                    else if (command.IsCommand<Heartbeat>())
-                    {
-                        HandleResponse(command.GetCommand<Heartbeat>());
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Debug.WriteLine($"处理响应异常：{ex.Message}");
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // 断开连接时允许消费者自然退出。
-        }
-    }
-
-    private async Task ProcessOutboundCommandsAsync()
-    {
-        var cancellationToken = _cancellationTokenSource?.Token ?? CancellationToken.None;
-
-        try
-        {
-            await foreach (var command in _outboundCommands.Reader.ReadAllAsync(cancellationToken))
-            {
-                try
-                {
-                    if (command.NeedCheckConnectStatus && ConnectStatus != ConnectStatus.Connected)
-                    {
-                        continue;
-                    }
-
-                    if (_client == null)
-                    {
-                        continue;
-                    }
-
-                    await _client.SendCommandAsync(command.Command);
-                }
-                catch (Exception ex)
-                {
-                    if (command.Command is Heartbeat)
-                    {
-                        var currentRetry = Interlocked.Increment(ref _trySendHeartbeatTimes);
-                        Debug.WriteLine(
-                            $"发送心跳异常，将尝试重新发送！({MaxTrySendHeartTime - currentRetry}/{MaxTrySendHeartTime})");
-
-                        if (currentRetry >= MaxTrySendHeartTime &&
-                            Interlocked.CompareExchange(ref _reconnectScheduled, 1, 0) == 0)
-                        {
-                            _ = Task.Run(() =>
-                            {
-                                try
-                                {
-                                    Reconnect();
-                                }
-                                finally
-                                {
-                                    Interlocked.Exchange(ref _reconnectScheduled, 0);
-                                }
-                            });
-                        }
-                    }
-                    else
-                    {
-                        Debug.WriteLine($"发送命令异常：{ex.Message}");
-                        ConnectStatus = ConnectStatus.Disconnected;
-                    }
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // 断开连接时允许消费者自然退出。
-        }
-    }
-
-    private async Task CheckIsEventServerAsync()
-    {
-        _requestIsEventServerTaskId = SocketHelper.GetNewTaskId();
-        _eventServerHandshakeCompletion =
-            new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-        SendCommand(new RequestIsEventServer { TaskId = _requestIsEventServerTaskId }, false);
-
-        // 连接建立后先做一次轻量握手，确认对端确实是本事件总线服务，而不是普通 TCP 服务。
-        var timeoutTask = Task.Delay(3000);
-        var completedTask = await Task.WhenAny(_eventServerHandshakeCompletion.Task, timeoutTask);
-        if (completedTask == timeoutTask)
-        {
-            ConnectStatus = ConnectStatus.DisconnectedNeedCheckEventServer;
-            _cancellationTokenSource?.Cancel();
-            _eventServerHandshakeCompletion.TrySetCanceled();
-            _eventServerHandshakeCompletion = null;
-            throw new Exception("请检查事件总线服务是否连接正确");
-        }
-
-        await _eventServerHandshakeCompletion.Task;
-        _eventServerHandshakeCompletion = null;
-        ConnectStatus = ConnectStatus.Connected;
-        SendHeartbeat();
-    }
-
-    private void HandleResponse(ResponseCommon response)
-    {
-        if (_requestIsEventServerTaskId == response.TaskId)
-        {
-            _requestIsEventServerTaskId = null;
-            _eventServerHandshakeCompletion?.TrySetResult(true);
-        }
-    }
-
-    private void HandleResponse(UpdateEvent response)
-    {
-        // 只有真正的查询响应才应该命中等待中的 QueryAsync。
-        // 如果当前消息仍是查询请求，即便 TaskId 与本地待查询映射相同，也要继续分发给订阅处理器。
-        if (!response.IsQueryRequest &&
-            _queryResponseChannels.TryGetValue(response.TaskId, out var responseChannel))
-        {
-            responseChannel.Writer.TryWrite(response);
-            return;
-        }
-
-        if (!_subjectAndHandlers.TryGetValue(response.Subject, out var handlers))
-        {
-            return;
-        }
-
-        foreach (var handler in handlers.ToArray())
-        {
-            try
-            {
-                var previousContext = _queryResponseContext.Value;
-                if (response.IsQueryRequest)
-                {
-                    // 仅在处理查询请求时注入上下文，普通广播事件不应携带 QueryTaskId。
-                    _queryResponseContext.Value = new QueryResponseContext(response.Subject, response.TaskId);
-                }
-
-                try
-                {
-                    var parameter = handler.Method.GetParameters().First();
-                    var parameterValue = response.Buffer?.DeserializeObject(parameter.ParameterType);
-                    if (handler.Method.ReturnType == typeof(Task))
-                    {
-                        var task = handler.DynamicInvoke(parameterValue) as Task;
-                        task?.GetAwaiter().GetResult();
-                    }
-                    else
-                    {
-                        handler.DynamicInvoke(parameterValue);
-                    }
-                }
-                finally
-                {
-                    _queryResponseContext.Value = previousContext;
-                }
-            }
-            catch (Exception ex)
-            {
-                Debug.WriteLine($"分发订阅消息异常：{ex.Message}");
-            }
-        }
-    }
-
-    private void HandleResponse(Heartbeat response)
-    {
-        Interlocked.Exchange(ref _trySendHeartbeatTimes, 0);
-    }
-
-    private void SendCommand(INetObject command, bool needCheckConnectStatus = true)
-    {
-        if (needCheckConnectStatus && ConnectStatus != ConnectStatus.Connected)
-        {
-            throw new Exception("事件服务未连接，无法发送事件！");
-        }
-
-        if (!_outboundCommands.Writer.TryWrite(new OutboundCommand(command, needCheckConnectStatus)))
-        {
-            throw new Exception("发送通道已关闭，无法继续发送事件。");
-        }
-    }
-
-    private void CompleteQueryChannels()
-    {
-        foreach (var responseChannel in _queryResponseChannels.Values)
-        {
-            responseChannel.Writer.TryComplete();
-        }
-
-        _queryResponseChannels.Clear();
-    }
-
-    private static Channel<SocketCommand> CreateInboundCommandChannel()
-    {
-        return Channel.CreateUnbounded<SocketCommand>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false
-        });
-    }
-
-    private static Channel<OutboundCommand> CreateOutboundCommandChannel()
-    {
-        return Channel.CreateUnbounded<OutboundCommand>(new UnboundedChannelOptions
-        {
-            SingleReader = true,
-            SingleWriter = false
-        });
+        return _session?.Cancellation.Token ?? CancellationToken.None;
     }
 
     private string? GetCurrentQueryTaskId(string subject)
     {
         var context = _queryResponseContext.Value;
-        // 只有“同主题 + 当前正处于查询处理器内”时，才把 Publish 识别为查询响应。
         return context is not null && string.Equals(context.Subject, subject, StringComparison.Ordinal)
             ? context.TaskId
             : null;
     }
 
-    private void DisposeClientCommandRegistration()
+    private void ValidateSubject(string subject)
     {
-        _clientCommandRegistration?.Dispose();
-        _clientCommandRegistration = null;
+        if (string.IsNullOrWhiteSpace(subject) || subject.Length > _options.MaxSubjectLength)
+        {
+            throw new ArgumentException("主题不能为空且长度不能超过配置上限。", nameof(subject));
+        }
     }
 
-    #endregion
+    private void ValidateBuffer(byte[]? buffer)
+    {
+        if (buffer is not null && buffer.Length > _options.MaxMessageSizeBytes)
+        {
+            throw new ArgumentException("消息体超过配置大小限制。", nameof(buffer));
+        }
+    }
+
+    private static void ValidateEndpoint(string host, int port)
+    {
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            throw new ArgumentException("主机地址不能为空。", nameof(host));
+        }
+
+        if (port is < IPEndPoint.MinPort or > IPEndPoint.MaxPort)
+        {
+            throw new ArgumentOutOfRangeException(nameof(port));
+        }
+    }
+
+    private void Report(string message, Exception? exception = null)
+    {
+        _options.Report(message, exception);
+    }
+
+    private static Channel<SocketCommand> CreateInboundCommandChannel(EventBusOptions options)
+    {
+        return Channel.CreateBounded<SocketCommand>(new BoundedChannelOptions(options.InboundQueueCapacity)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
+    }
+
+    private static Channel<OutboundCommand> CreateOutboundCommandChannel(EventBusOptions options)
+    {
+        return Channel.CreateBounded<OutboundCommand>(new BoundedChannelOptions(options.OutboundQueueCapacity)
+        {
+            SingleReader = true,
+            SingleWriter = false,
+            FullMode = BoundedChannelFullMode.Wait
+        });
+    }
 }
