@@ -372,6 +372,81 @@ public class EventBusIntegrationTest
         }
     }
 
+    [Fact]
+    public async Task Reconnect_ShouldRestoreSubscriptions()
+    {
+        var port = GetAvailablePort();
+        var options = new EventBusOptions
+        {
+            HeartbeatInterval = TimeSpan.FromMilliseconds(100),
+            ReconnectInterval = TimeSpan.FromMilliseconds(100)
+        };
+        var server = new EventServer(options);
+        var subscriber = new EventClient(options);
+        var publisher = new EventClient(options);
+        var received = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        try
+        {
+            await server.StartAsync(IPAddress.Loopback.ToString(), port);
+            Assert.True(await subscriber.ConnectAsync(IPAddress.Loopback.ToString(), port));
+            Assert.True(await publisher.ConnectAsync(IPAddress.Loopback.ToString(), port));
+            subscriber.Subscribe<string>("demo.reconnect", message => received.TrySetResult(message));
+            await WaitForTransportAsync();
+
+            server.Stop();
+            await Task.Delay(250);
+            await server.StartAsync(IPAddress.Loopback.ToString(), port);
+
+            await WaitUntilAsync(
+                () => subscriber.ConnectStatus == ConnectStatus.Connected &&
+                      publisher.ConnectStatus == ConnectStatus.Connected,
+                5000);
+            Assert.True(publisher.Publish("demo.reconnect", "after-reconnect", out var errorMessage), errorMessage);
+            Assert.Equal("after-reconnect", await WaitAsync(received.Task, 5000));
+        }
+        finally
+        {
+            publisher.Disconnect();
+            subscriber.Disconnect();
+            server.Stop();
+        }
+    }
+
+    [Fact]
+    public async Task ConcurrentSubscriptions_ShouldKeepAllHandlers()
+    {
+        var port = GetAvailablePort();
+        var server = new EventServer();
+        var publisher = new EventClient();
+        var subscriber = new EventClient();
+        var receivedCount = 0;
+        const int handlerCount = 32;
+
+        try
+        {
+            await server.StartAsync(IPAddress.Loopback.ToString(), port);
+            Assert.True(await subscriber.ConnectAsync(IPAddress.Loopback.ToString(), port));
+            Assert.True(await publisher.ConnectAsync(IPAddress.Loopback.ToString(), port));
+
+            var handlers = Enumerable.Range(0, handlerCount)
+                .Select(_ => new Action<string>(_ => Interlocked.Increment(ref receivedCount)))
+                .ToArray();
+            await Task.WhenAll(handlers.Select(handler => Task.Run(() =>
+                subscriber.Subscribe("demo.concurrent-subscribe", handler))));
+            await WaitForTransportAsync();
+
+            Assert.True(publisher.Publish("demo.concurrent-subscribe", "message", out var errorMessage), errorMessage);
+            await WaitUntilAsync(() => Volatile.Read(ref receivedCount) == handlerCount, 3000);
+        }
+        finally
+        {
+            publisher.Disconnect();
+            subscriber.Disconnect();
+            server.Stop();
+        }
+    }
+
     private static int GetAvailablePort()
     {
         var listener = new TcpListener(IPAddress.Loopback, 0);
@@ -397,5 +472,14 @@ public class EventBusIntegrationTest
     private static Task WaitForTransportAsync()
     {
         return Task.Delay(150);
+    }
+
+    private static async Task WaitUntilAsync(Func<bool> condition, int timeoutMilliseconds)
+    {
+        using var cancellationTokenSource = new CancellationTokenSource(timeoutMilliseconds);
+        while (!condition())
+        {
+            await Task.Delay(25, cancellationTokenSource.Token);
+        }
     }
 }

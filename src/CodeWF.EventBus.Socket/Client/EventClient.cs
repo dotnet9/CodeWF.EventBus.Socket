@@ -263,8 +263,8 @@ public class EventClient : IEventClient
             session.CommandRegistration = client.RegisterCommandHandler(
                 command => HandleSocketCommandAsync(session, command));
             await CheckIsEventServerAsync(session, cancellationToken).ConfigureAwait(false);
-            await ResubscribeAsync(session, cancellationToken).ConfigureAwait(false);
             ConnectStatus = ConnectStatus.Connected;
+            await ResubscribeAsync(session, cancellationToken).ConfigureAwait(false);
             session.HeartbeatTask = HeartbeatLoopAsync(session);
             return true;
         }
