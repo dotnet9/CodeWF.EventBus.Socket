@@ -12,7 +12,7 @@
 
 ## 仓库规范
 
-- 当前版本：`1.4.4.1`，版本号统一维护在根目录 `Directory.Build.props` 的 `<Version>` 节点。
+- 当前版本：`1.4.4.2`，版本号统一维护在根目录 `Directory.Build.props` 的 `<Version>` 节点。
 - NuGet 包项目统一支持 `net8.0;net10.0;net11.0`；Demo、App、测试与内部应用项目统一使用 `net11.0` / `net11.0-windows`。
 - 根目录 `logo.svg`、`logo.png`、`logo.ico` 是唯一图标源，子工程只通过 MSBuild `Link` 引用，不维护图标副本。
 - 运行时帮助、Markdown 示例、内置备忘录、设计说明等业务文档按功能保留；仓库级入口文档使用根目录 `README.md` 和 `UpdateLog.md`。
@@ -157,7 +157,7 @@ using var eventClient = new EventClient(options);
 | `CodeWF.EventBus` / `CodeWF.NetWrapper` / `CodeWF.NetWeaver` / `CodeWF.Log.Core` / `CodeWF.LogViewer.Avalonia` | 事件总线、TCP 传输与示例日志 | MIT | CodeWF 自研仓库 | 自研开源包，通过 |
 | `Avalonia` / `Avalonia.Desktop` / `Avalonia.Markup.Xaml.Loader` | 示例 UI | MIT | https://github.com/AvaloniaUI/Avalonia | 通过，`12.1.1` |
 | `Semi.Avalonia` | 示例主题 | MIT | https://github.com/irihitech/Semi.Avalonia | 通过，仅使用开源主体包 |
-| `Irihi.Ursa` / `Irihi.Ursa.Themes.Semi` | 示例控件与主题 | MIT | https://github.com/irihitech/Ursa.Avalonia | 通过，`2.0.0` |
+| `Irihi.Ursa` / `Irihi.Ursa.Themes.Semi` | 示例控件与主题 | MIT | https://github.com/irihitech/Ursa.Avalonia | 通过，`2.2.0` |
 | `Prism.Avalonia` / `Prism.DryIoc.Avalonia` | 示例 DI / Prism shell | MIT | https://github.com/AvaloniaCommunity/Prism.Avalonia | 通过，固定到 8.x 开源线 |
 | `ReactiveUI.Avalonia` | 示例 MVVM | MIT | https://github.com/reactiveui/reactiveui | 通过 |
 | `System.Configuration.ConfigurationManager` / `System.Drawing.Common` / `System.Security.Cryptography.ProtectedData` / `System.Security.Permissions` / `System.Windows.Extensions` | 传递依赖兼容 pin | MIT | https://github.com/dotnet/dotnet | 通过，固定到 `10.0.10` |

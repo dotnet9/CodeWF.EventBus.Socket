@@ -1,6 +1,6 @@
 # 更新日志
 
-# 1.4.4.1 (2026-09-22)
+# 1.4.4.2 (2026-09-22)
 
 - Hardened client and server lifecycle handling, cancellation, reconnect recovery, authentication, validation, queue limits, and disposal.
 - Added regression coverage for reconnect subscription recovery, concurrent subscriptions, authentication failures, input limits, and query cancellation.
