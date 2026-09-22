@@ -23,6 +23,8 @@ public interface IEventClient
 
     Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(string subject, TQuery message,
         int overtimeMilliseconds = 3000);
+    Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(string subject, TQuery message,
+        int overtimeMilliseconds, CancellationToken cancellationToken);
 }
 
 public enum ConnectStatus

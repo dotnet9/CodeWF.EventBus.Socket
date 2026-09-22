@@ -226,6 +226,68 @@ public class EventBusIntegrationTest
     }
 
     [Fact]
+    public async Task Query_ShouldHonorCancellationToken()
+    {
+        var port = GetAvailablePort();
+        var server = new EventServer();
+        var requester = new EventClient();
+
+        try
+        {
+            await server.StartAsync(IPAddress.Loopback.ToString(), port);
+            Assert.True(await requester.ConnectAsync(IPAddress.Loopback.ToString(), port));
+            using var cancellationTokenSource = new CancellationTokenSource(50);
+
+            var result = await requester.QueryAsync<string, string>(
+                "demo.cancellation",
+                "cancel-me",
+                3000,
+                cancellationTokenSource.Token);
+
+            Assert.Null(result.Result);
+            Assert.Contains("取消", result.ErrorMessage, StringComparison.Ordinal);
+        }
+        finally
+        {
+            requester.Disconnect();
+            server.Stop();
+        }
+    }
+
+    [Fact]
+    public void Client_ShouldRejectInvalidSubjectAndOversizedMessage()
+    {
+        var client = new EventClient(new EventBusOptions { MaxMessageSizeBytes = 1 });
+
+        Assert.False(client.Publish(string.Empty, "message", out var emptySubjectError));
+        Assert.Contains("主题", emptySubjectError, StringComparison.Ordinal);
+        Assert.False(client.Publish("demo.validation", "message", out var oversizedMessageError));
+        Assert.Contains("消息体", oversizedMessageError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Client_ShouldFailHandshake_WhenAuthenticationTokenIsWrong()
+    {
+        var port = GetAvailablePort();
+        var server = new EventServer(new EventBusOptions { AuthenticationToken = "server-token" });
+        var wrongClient = new EventClient(new EventBusOptions { AuthenticationToken = "wrong-token" });
+        var validClient = new EventClient(new EventBusOptions { AuthenticationToken = "server-token" });
+
+        try
+        {
+            await server.StartAsync(IPAddress.Loopback.ToString(), port);
+            Assert.False(await wrongClient.ConnectAsync(IPAddress.Loopback.ToString(), port));
+            Assert.True(await validClient.ConnectAsync(IPAddress.Loopback.ToString(), port));
+        }
+        finally
+        {
+            wrongClient.Disconnect();
+            validClient.Disconnect();
+            server.Stop();
+        }
+    }
+
+    [Fact]
     public async Task PublishBurst_ShouldReachSubscriberInOrder()
     {
         var port = GetAvailablePort();

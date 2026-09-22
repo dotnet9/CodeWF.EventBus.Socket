@@ -158,6 +158,16 @@ public class EventClient : IEventClient
         TQuery message,
         int overtimeMilliseconds = 3000)
     {
+        return await QueryAsync<TQuery, TResponse>(subject, message, overtimeMilliseconds, CancellationToken.None)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<(TResponse? Result, string ErrorMessage)> QueryAsync<TQuery, TResponse>(
+        string subject,
+        TQuery message,
+        int overtimeMilliseconds,
+        CancellationToken cancellationToken)
+    {
         var taskId = SocketHelper.GetNewTaskId();
         try
         {
@@ -188,7 +198,8 @@ public class EventClient : IEventClient
             using var timeoutCancellation = new CancellationTokenSource(overtimeMilliseconds);
             using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
                 GetSessionCancellationToken(),
-                timeoutCancellation.Token);
+                timeoutCancellation.Token,
+                cancellationToken);
 
             var updateEvent = await responseChannel.Reader.ReadAsync(linkedCancellation.Token).ConfigureAwait(false);
             if (updateEvent.Buffer is null)
@@ -203,7 +214,7 @@ public class EventClient : IEventClient
         }
         catch (OperationCanceledException)
         {
-            return (default, ConnectStatus == ConnectStatus.Disconnected
+            return (default, cancellationToken.IsCancellationRequested || ConnectStatus == ConnectStatus.Disconnected
                 ? "操作已取消。"
                 : "查询超时，请重试。");
         }
