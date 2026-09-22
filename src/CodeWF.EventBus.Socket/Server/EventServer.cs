@@ -20,26 +20,34 @@ public class EventServer : IEventServer
         {
             Cancellation = new CancellationTokenSource();
             Inbound = CreateInboundCommandChannel(options);
-            Outbound = CreateOutboundCommandChannel(options);
         }
 
         public CancellationTokenSource Cancellation { get; }
         public Channel<SocketCommand> Inbound { get; }
-        public Channel<OutboundCommand> Outbound { get; }
+        public Dictionary<System.Net.Sockets.Socket, ClientOutboundQueue> OutboundQueues { get; } = new();
+        public object OutboundSync { get; } = new();
         public TcpSocketServer? Server { get; set; }
         public IDisposable? CommandRegistration { get; set; }
         public Task InboundTask { get; set; } = Task.CompletedTask;
-        public Task OutboundTask { get; set; } = Task.CompletedTask;
         public Task CleanupTask { get; set; } = Task.CompletedTask;
         public int Stopped;
+    }
+
+    private sealed class ClientOutboundQueue
+    {
+        public ClientOutboundQueue(EventBusOptions options)
+        {
+            Commands = CreateOutboundCommandChannel(options);
+        }
+
+        public Channel<INetObject> Commands { get; }
+        public Task Worker { get; set; } = Task.CompletedTask;
     }
 
     private sealed record PendingQuery(
         string Subject,
         System.Net.Sockets.Socket Client,
         DateTimeOffset ExpiresAt);
-
-    private sealed record OutboundCommand(System.Net.Sockets.Socket Client, INetObject Command);
 
     public EventServer(EventBusOptions? options = null)
     {
@@ -77,7 +85,6 @@ public class EventServer : IEventServer
             var session = _session;
             ConnectStatus = ConnectStatus.IsConnecting;
             session.InboundTask = ProcessInboundCommandsAsync(session);
-            session.OutboundTask = ProcessOutboundCommandsAsync(session);
             session.CleanupTask = CleanupPendingQueriesAsync(session);
 
             try
@@ -209,28 +216,34 @@ public class EventServer : IEventServer
         }
     }
 
-    private async Task ProcessOutboundCommandsAsync(ServerSession session)
+    private async Task ProcessClientOutboundCommandsAsync(
+        ServerSession session,
+        System.Net.Sockets.Socket client,
+        ClientOutboundQueue queue)
     {
         try
         {
-            await foreach (var command in session.Outbound.Reader.ReadAllAsync(session.Cancellation.Token)
+            await foreach (var command in queue.Commands.Reader.ReadAllAsync(session.Cancellation.Token)
                                .ConfigureAwait(false))
             {
                 try
                 {
                     if (session.Server is not null)
                     {
-                        await session.Server.SendCommandAsync(command.Client, command.Command).ConfigureAwait(false);
+                        await session.Server.SendCommandAsync(client, command).ConfigureAwait(false);
                     }
                 }
                 catch (SocketException ex)
                 {
                     _options.Report("发送服务端命令失败，客户端将被移除", ex);
-                    RemoveClient(command.Client);
+                    RemoveClient(session, client);
+                    break;
                 }
                 catch (Exception ex)
                 {
                     _options.Report("发送服务端命令失败", ex);
+                    RemoveClient(session, client);
+                    break;
                 }
             }
         }
@@ -437,9 +450,19 @@ public class EventServer : IEventServer
         });
     }
 
-    private void RemoveClient(System.Net.Sockets.Socket tcpClient)
+    private void RemoveClient(ServerSession session, System.Net.Sockets.Socket tcpClient)
     {
         _authorizedClients.TryRemove(tcpClient, out _);
+        ClientOutboundQueue? queue = null;
+        lock (session.OutboundSync)
+        {
+            if (session.OutboundQueues.Remove(tcpClient, out var removedQueue))
+            {
+                queue = removedQueue;
+            }
+        }
+
+        queue?.Commands.Writer.TryComplete();
         lock (_subscriptionSync)
         {
             foreach (var subject in _subscribedSubjectAndClients.Keys.ToArray())
@@ -461,9 +484,20 @@ public class EventServer : IEventServer
 
     private void SendCommand(ServerSession session, System.Net.Sockets.Socket client, INetObject command)
     {
-        if (!session.Outbound.Writer.TryWrite(new OutboundCommand(client, command)))
+        ClientOutboundQueue queue;
+        lock (session.OutboundSync)
         {
-            RemoveClient(client);
+            if (!session.OutboundQueues.TryGetValue(client, out queue!))
+            {
+                queue = new ClientOutboundQueue(_options);
+                queue.Worker = ProcessClientOutboundCommandsAsync(session, client, queue);
+                session.OutboundQueues.Add(client, queue);
+            }
+        }
+
+        if (!queue.Commands.Writer.TryWrite(command))
+        {
+            RemoveClient(session, client);
             throw new InvalidOperationException("服务端发送队列已关闭或已满。");
         }
     }
@@ -516,10 +550,23 @@ public class EventServer : IEventServer
         }
 
         session.Inbound.Writer.TryComplete();
-        session.Outbound.Writer.TryComplete();
+        ClientOutboundQueue[] queues;
+        lock (session.OutboundSync)
+        {
+            queues = session.OutboundQueues.Values.ToArray();
+            foreach (var queue in queues)
+            {
+                queue.Commands.Writer.TryComplete();
+            }
+
+            session.OutboundQueues.Clear();
+        }
+
         try
         {
-            await Task.WhenAll(session.InboundTask, session.OutboundTask, session.CleanupTask)
+            await Task.WhenAll(
+                    new[] { session.InboundTask, session.CleanupTask }
+                        .Concat(queues.Select(queue => queue.Worker)))
                 .WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is OperationCanceledException or TimeoutException)
@@ -571,9 +618,9 @@ public class EventServer : IEventServer
         });
     }
 
-    private static Channel<OutboundCommand> CreateOutboundCommandChannel(EventBusOptions options)
+    private static Channel<INetObject> CreateOutboundCommandChannel(EventBusOptions options)
     {
-        return Channel.CreateBounded<OutboundCommand>(new BoundedChannelOptions(options.OutboundQueueCapacity)
+        return Channel.CreateBounded<INetObject>(new BoundedChannelOptions(options.OutboundQueueCapacity)
         {
             SingleReader = true,
             SingleWriter = false,
