@@ -1,5 +1,11 @@
 # 更新日志
 
+# 1.4.4.1 (2026-09-22)
+
+- Hardened client and server lifecycle handling, cancellation, reconnect recovery, authentication, validation, queue limits, and disposal.
+- Added regression coverage for reconnect subscription recovery, concurrent subscriptions, authentication failures, input limits, and query cancellation.
+- Updated build metadata, dependency pins, runtime documentation, and CI coverage.
+
 ## 1.3.4 (2026-09-20)
 
 - 🚀[新增]-NuGet 包统一支持 `net8.0;net10.0;net11.0`，并发布新版本。

@@ -3,7 +3,7 @@ using CodeWF.EventBus;
 // ReSharper disable once CheckNamespace
 namespace CodeWF.EventBus.Socket;
 
-public class EventClient : IEventClient
+public class EventClient : IEventClient, IDisposable
 {
     private const int HandshakeTimeoutMilliseconds = 3000;
 
@@ -22,6 +22,7 @@ public class EventClient : IEventClient
     private string? _host;
     private int _port;
     private bool _isSubscribedToClientErrorEvents;
+    private int _disposed;
 
     private sealed class ClientSession
     {
@@ -75,6 +76,7 @@ public class EventClient : IEventClient
 
     public async Task<bool> ConnectAsync(string host, int port, CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         ValidateEndpoint(host, port);
         await _lifecycleGate.WaitAsync(cancellationToken).ConfigureAwait(false);
 
@@ -91,6 +93,11 @@ public class EventClient : IEventClient
 
     public void Disconnect()
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
         _lifecycleGate.Wait();
         try
         {
@@ -109,21 +116,25 @@ public class EventClient : IEventClient
 
     public void Subscribe<T>(string subject, Action<T> eventHandler)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         AddSubscribe(subject, eventHandler);
     }
 
     public void Subscribe<T>(string subject, Func<T, Task> asyncEventHandler)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         AddSubscribe(subject, asyncEventHandler);
     }
 
     public void Unsubscribe<T>(string subject, Action<T> eventHandler)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         RemoveSubscribe(subject, eventHandler);
     }
 
     public void Unsubscribe<T>(string subject, Func<T, Task> asyncEventHandler)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         RemoveSubscribe(subject, asyncEventHandler);
     }
 
@@ -132,6 +143,7 @@ public class EventClient : IEventClient
         errorMessage = string.Empty;
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             ValidateSubject(subject);
             var buffer = message is null ? null : message.SerializeObject(typeof(T));
             ValidateBuffer(buffer);
@@ -171,6 +183,7 @@ public class EventClient : IEventClient
         var taskId = SocketHelper.GetNewTaskId();
         try
         {
+            ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
             ValidateSubject(subject);
             if (overtimeMilliseconds <= 0)
             {
@@ -244,6 +257,31 @@ public class EventClient : IEventClient
             .GetResult();
         errorMessage = result.ErrorMessage;
         return result.Result;
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        _lifecycleGate.Wait();
+        try
+        {
+            StopReconnectLoop();
+            StopSessionAsync(_session).GetAwaiter().GetResult();
+            _session = null;
+            CompleteQueryChannels();
+            RemoveClientErrorSubscription();
+            ConnectStatus = ConnectStatus.Disconnected;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        GC.SuppressFinalize(this);
     }
 
     private async Task<bool> ConnectCoreAsync(string host, int port, CancellationToken cancellationToken)

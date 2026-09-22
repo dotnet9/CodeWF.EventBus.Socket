@@ -1,7 +1,7 @@
 // ReSharper disable once CheckNamespace
 namespace CodeWF.EventBus.Socket;
 
-public class EventServer : IEventServer
+public class EventServer : IEventServer, IDisposable
 {
     private const int StartTimeoutMilliseconds = 3000;
 
@@ -13,6 +13,7 @@ public class EventServer : IEventServer
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
     private ServerSession? _session;
+    private int _disposed;
 
     private sealed class ServerSession
     {
@@ -70,6 +71,7 @@ public class EventServer : IEventServer
 
     public async Task StartAsync(string? host, int port, CancellationToken cancellationToken)
     {
+        ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
         if (port is < IPEndPoint.MinPort or > IPEndPoint.MaxPort)
         {
             throw new ArgumentOutOfRangeException(nameof(port));
@@ -127,6 +129,11 @@ public class EventServer : IEventServer
 
     public void Stop()
     {
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            return;
+        }
+
         _lifecycleGate.Wait();
         try
         {
@@ -139,6 +146,29 @@ public class EventServer : IEventServer
         {
             _lifecycleGate.Release();
         }
+    }
+
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref _disposed, 1) != 0)
+        {
+            return;
+        }
+
+        _lifecycleGate.Wait();
+        try
+        {
+            StopSessionAsync(_session).GetAwaiter().GetResult();
+            _session = null;
+            ClearState();
+            ConnectStatus = ConnectStatus.Disconnected;
+        }
+        finally
+        {
+            _lifecycleGate.Release();
+        }
+
+        GC.SuppressFinalize(this);
     }
 
     private Task<bool> HandleSocketCommandAsync(

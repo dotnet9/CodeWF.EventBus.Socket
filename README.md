@@ -12,8 +12,8 @@
 
 ## 仓库规范
 
-- 当前版本：`1.4.3.0`，版本号统一维护在根目录 `Directory.Build.props` 的 `<Version>` 节点。
-- NuGet 包项目统一支持 `net8.0;net10.0`；Demo、App、测试与内部应用项目统一使用 `net11.0` / `net11.0-windows`。
+- 当前版本：`1.4.4.1`，版本号统一维护在根目录 `Directory.Build.props` 的 `<Version>` 节点。
+- NuGet 包项目统一支持 `net8.0;net10.0;net11.0`；Demo、App、测试与内部应用项目统一使用 `net11.0` / `net11.0-windows`。
 - 根目录 `logo.svg`、`logo.png`、`logo.ico` 是唯一图标源，子工程只通过 MSBuild `Link` 引用，不维护图标副本。
 - 运行时帮助、Markdown 示例、内置备忘录、设计说明等业务文档按功能保留；仓库级入口文档使用根目录 `README.md` 和 `UpdateLog.md`。
 
@@ -99,6 +99,27 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 - [设计文档](docs/设计文档.md)
 - [示例工程](src/EventBusDemo)
 
+## Runtime options
+
+```csharp
+var options = new EventBusOptions
+{
+    InboundQueueCapacity = 1024,
+    OutboundQueueCapacity = 4096,
+    MaxSubjectLength = 256,
+    MaxMessageSizeBytes = 1024 * 1024,
+    AuthenticationToken = "shared-secret"
+};
+
+using var eventServer = new EventServer(options);
+using var eventClient = new EventClient(options);
+```
+
+- The server binds to `127.0.0.1` when no host is provided. Use an explicit bind address for network deployment.
+- `AuthenticationToken` protects the event-bus handshake with a shared token. It is not a replacement for TLS because the token is transported over the underlying connection.
+- Queue and message limits are enforced to prevent unbounded memory growth. A full per-client outbound queue disconnects that client.
+- Use `ConnectAsync` and the cancellation-aware `QueryAsync` overloads in hosted applications.
+
 ## 脚本
 
 - `pack.bat`：还原、构建并打包 `CodeWF.EventBus.Socket` 到 `artifacts\packages`。如果本机存在 `..\CodeWF.NetWeaver\artifacts\packages`，脚本会自动作为本地包源使用，方便在兄弟仓库尚未发布新包时完成本地打包验证。
@@ -127,25 +148,25 @@ var result = await eventClient.QueryAsync<EmailQuery, EmailQueryResponse>(
 - 新增 `Directory.Packages.props`，直接依赖统一走中央包管理。
 - `Prism.Avalonia` / `Prism.DryIoc.Avalonia` 从 9.x 降到 MIT 的 `8.1.97.11073`，并继续保留该开源线。
 - 移除未使用的 `Irihi.Ursa.PrismExtension`。
-- 示例依赖升级到 `Avalonia 12.0.3`、`Semi.Avalonia 12.0.1`、`Irihi.Ursa 2.0.0`、`ReactiveUI.Avalonia 12.0.1`、`CodeWF.NetWrapper 3.0.0`、`CodeWF.EventBus 3.4.5.5`、`CodeWF.LogViewer.Avalonia 12.0.3.1`。
+- 示例依赖当前由 `Directory.Packages.props` 统一维护，包括 `Avalonia 12.1.1`、`Semi.Avalonia 12.1.0.1`、`Irihi.Ursa 2.2.0`、`ReactiveUI.Avalonia 12.1.1`、`CodeWF.NetWrapper 3.0.11`、`CodeWF.EventBus 3.4.5.16` 和 `CodeWF.Log.Avalonia 12.1.2.3`。
 - 移除 `Avalonia.Diagnostics`，该包目前没有 Avalonia 12 对应包线。
-- 旧传递依赖 `System.Configuration.ConfigurationManager`、`System.Drawing.Common`、`System.Security.Cryptography.ProtectedData` 等已 pin 到 `10.0.8`。
+- 旧传递依赖 `System.Configuration.ConfigurationManager`、`System.Drawing.Common`、`System.Security.Cryptography.ProtectedData` 等已 pin 到 `10.0.10`。
 
 | 包 | 使用范围 | 协议 | 源码/项目地址 | 结论 |
 | --- | --- | --- | --- | --- |
 | `CodeWF.EventBus` / `CodeWF.NetWrapper` / `CodeWF.NetWeaver` / `CodeWF.Log.Core` / `CodeWF.LogViewer.Avalonia` | 事件总线、TCP 传输与示例日志 | MIT | CodeWF 自研仓库 | 自研开源包，通过 |
-| `Avalonia` / `Avalonia.Desktop` / `Avalonia.Markup.Xaml.Loader` | 示例 UI | MIT | https://github.com/AvaloniaUI/Avalonia | 通过，`12.0.3` |
+| `Avalonia` / `Avalonia.Desktop` / `Avalonia.Markup.Xaml.Loader` | 示例 UI | MIT | https://github.com/AvaloniaUI/Avalonia | 通过，`12.1.1` |
 | `Semi.Avalonia` | 示例主题 | MIT | https://github.com/irihitech/Semi.Avalonia | 通过，仅使用开源主体包 |
 | `Irihi.Ursa` / `Irihi.Ursa.Themes.Semi` | 示例控件与主题 | MIT | https://github.com/irihitech/Ursa.Avalonia | 通过，`2.0.0` |
 | `Prism.Avalonia` / `Prism.DryIoc.Avalonia` | 示例 DI / Prism shell | MIT | https://github.com/AvaloniaCommunity/Prism.Avalonia | 通过，固定到 8.x 开源线 |
 | `ReactiveUI.Avalonia` | 示例 MVVM | MIT | https://github.com/reactiveui/reactiveui | 通过 |
-| `System.Configuration.ConfigurationManager` / `System.Drawing.Common` / `System.Security.Cryptography.ProtectedData` / `System.Security.Permissions` / `System.Windows.Extensions` | 传递依赖兼容 pin | MIT | https://github.com/dotnet/dotnet | 通过，固定到 `10.0.8` |
-| `Tmds.DBus.Protocol` | Avalonia Linux 桌面传输 | MIT | https://github.com/tmds/Tmds.DBus | 通过，固定到 `0.93.0` |
+| `System.Configuration.ConfigurationManager` / `System.Drawing.Common` / `System.Security.Cryptography.ProtectedData` / `System.Security.Permissions` / `System.Windows.Extensions` | 传递依赖兼容 pin | MIT | https://github.com/dotnet/dotnet | 通过，固定到 `10.0.10` |
+| `Tmds.DBus.Protocol` | Avalonia Linux 桌面传输 | MIT | https://github.com/tmds/Tmds.DBus | 通过，固定到 `0.94.2` |
 | `YY-Thunks` | Windows 兼容 | MIT | https://github.com/Chuyu-Team/YY-Thunks | 源码开放，通过 |
 | `Microsoft.NET.Test.Sdk` / `coverlet.collector` | 测试 | MIT | https://github.com/microsoft/vstest / https://github.com/coverlet-coverage/coverlet | 通过 |
 | `xunit` / `xunit.runner.visualstudio` | 测试 | Apache-2.0 | https://github.com/xunit/xunit | 通过 |
 
-传递依赖检查结论：有效依赖链未发现 Prism 9 预览包或旧 `System.Drawing.Common 4.7.0` / `System.Configuration.ConfigurationManager 4.7.0` / `System.Security.Cryptography.ProtectedData 4.7.0` 链路。`CodeWF.NetWrapper` 已解析到 `3.0.0`。
+传递依赖检查结论：有效依赖链未发现 Prism 9 预览包或旧 `System.Drawing.Common 4.7.0` / `System.Configuration.ConfigurationManager 4.7.0` / `System.Security.Cryptography.ProtectedData 4.7.0` 链路。`CodeWF.NetWrapper` 已解析到 `3.0.11`。
 ## 包版本维护约定
 
 XML 文件统一使用两个空格缩进。`Directory.Packages.props` 统一承载 NuGet 中央包管理开关和包版本变量，包括 `AvaloniaVersion` 等共享版本属性；`Directory.Build.props` 仅保留项目构建、编译选项和 NuGet 元数据。仓库如引用 `VC-LTL`、`YY-Thunks`，这两个兼容旧版操作系统的特殊包必须使用最新预览版。

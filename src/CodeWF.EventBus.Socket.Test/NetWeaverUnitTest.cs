@@ -93,6 +93,15 @@ public class NetWeaverUnitTest
         Assert.Equal(stu.Id, newStu.Id);
         Assert.Equal(stu.Name, newStu.Name);
     }
+
+    [Fact]
+    public void CheckOvertime_ShouldReturnFalse_WhenActionFails()
+    {
+        var result = CodeWF.EventBus.Socket.Helpers.ActionHelper.CheckOvertime(
+            () => throw new InvalidOperationException());
+
+        Assert.False(result);
+    }
 }
 
 public class Student

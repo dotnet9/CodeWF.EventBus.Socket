@@ -15,10 +15,6 @@
     <IsTrimmable>true</IsTrimmable>
     <PublishTrimmed>true</PublishTrimmed>
   </PropertyGroup>
-  <PropertyGroup Condition="$([MSBuild]::IsTargetFrameworkCompatible('$(TargetFramework)', 'net11.0-windows'))">
-    <IsTrimmable>true</IsTrimmable>
-    <PublishTrimmed>true</PublishTrimmed>
-  </PropertyGroup>
   <ItemGroup>
     <TrimmerRootDescriptor Include="Roots.xml" />
   </ItemGroup>
