@@ -8,6 +8,7 @@ public class EventClient : IEventClient, IDisposable
     private const int HandshakeTimeoutMilliseconds = 3000;
 
     private readonly EventBusOptions _options;
+    private readonly string _clientId = Guid.NewGuid().ToString("N");
     private readonly AsyncLocal<QueryResponseContext?> _queryResponseContext = new();
     private readonly ConcurrentDictionary<string, Channel<UpdateEvent>> _queryResponseChannels = new();
     private readonly Dictionary<string, List<Delegate>> _subjectAndHandlers = new(StringComparer.Ordinal);
@@ -340,7 +341,9 @@ public class EventClient : IEventClient, IDisposable
         SendCommand(session, new RequestIsEventServer
         {
             TaskId = session.HandshakeTaskId,
-            AuthenticationToken = _options.AuthenticationToken
+            AuthenticationToken = _options.AuthenticationToken,
+            // 断线重连后凭此标识关联服务端的离线订阅缓冲并补发消息。
+            ClientId = _clientId
         }, false);
 
         using var timeout = new CancellationTokenSource(HandshakeTimeoutMilliseconds);

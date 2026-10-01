@@ -1,5 +1,13 @@
 # 更新日志
 
+# 1.5.0 (2026-10-01)
+
+- 🚀[新增]-服务端离线消息补发：客户端断线期间，其订阅主题的广播进入服务端有界缓冲（按客户端 ClientId + 主题隔离），重连并重新订阅成功后按原顺序补发，不再丢失断线窗口内的消息（issue #1）。
+- 🚀[新增]-客户端握手携带实例级 `ClientId`，服务端据此识别重连（同一标识的僵尸旧连接会被主动移除）；旧版本客户端不携带该字段时行为不变。
+- 🚀[新增]-服务端空闲连接扫描：超过 `ClientIdleTimeout` 未收到任何命令（含心跳）的连接被主动下线并转入离线缓冲，避免客户端静默断开后死连接与订阅长期滞留。
+- 🔧[新增]-`EventBusOptions` 新增 `EnableOfflineMessage`（默认开启）、`OfflineMessageCapacity`（每客户端每主题缓冲上限，默认 1024，超出丢弃最旧）、`OfflineMessageRetention`（离线缓冲保留时长，默认 30 分钟）、`ClientIdleTimeout`（空闲下线阈值，默认 30 秒）。
+- ✅[测试]-新增离线补发集成测试：断线补发与顺序、缓冲容量上限（丢弃最旧）、功能关闭时不补发。
+
 # 1.4.4.2 (2026-09-22)
 
 - Hardened client and server lifecycle handling, cancellation, reconnect recovery, authentication, validation, queue limits, and disposal.

@@ -7,8 +7,10 @@ public class EventServer : IEventServer, IDisposable
 
     private readonly EventBusOptions _options;
     private readonly ConcurrentDictionary<string, PendingQuery> _pendingQueries = new();
-    private readonly ConcurrentDictionary<System.Net.Sockets.Socket, byte> _authorizedClients = new();
+    private readonly ConcurrentDictionary<System.Net.Sockets.Socket, string?> _authorizedClients = new();
     private readonly Dictionary<string, HashSet<System.Net.Sockets.Socket>> _subscribedSubjectAndClients = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, OfflineSubscriptionState> _offlineSubscriptions = new();
+    private readonly ConcurrentDictionary<System.Net.Sockets.Socket, DateTimeOffset> _lastClientActivity = new();
     private readonly object _subscriptionSync = new();
     private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
 
@@ -49,6 +51,16 @@ public class EventServer : IEventServer, IDisposable
         string Subject,
         System.Net.Sockets.Socket Client,
         DateTimeOffset ExpiresAt);
+
+    /// <summary>
+    /// 客户端断线后的离线订阅状态：按主题缓冲断线期间的广播消息，重连订阅成功后补发。
+    /// </summary>
+    private sealed class OfflineSubscriptionState
+    {
+        public object Sync { get; } = new();
+        public Dictionary<string, Channel<UpdateEvent>> PendingEvents { get; } = new(StringComparer.Ordinal);
+        public DateTimeOffset LastActiveAt { get; set; }
+    }
 
     public EventServer(EventBusOptions? options = null)
     {
@@ -204,6 +216,8 @@ public class EventServer : IEventServer, IDisposable
                     continue;
                 }
 
+                _lastClientActivity[socketClient] = DateTimeOffset.UtcNow;
+
                 try
                 {
                     if (command.IsCommand<RequestIsEventServer>())
@@ -299,6 +313,9 @@ public class EventServer : IEventServer, IDisposable
 
                     _ = pendingQuery;
                 }
+
+                CleanupExpiredOfflineSubscriptions();
+                CleanupIdleClients(session);
             }
         }
         catch (OperationCanceledException) when (session.Cancellation.IsCancellationRequested)
@@ -320,7 +337,23 @@ public class EventServer : IEventServer, IDisposable
             return;
         }
 
-        _authorizedClients[client] = 0;
+        // 同一 ClientId 的旧连接视为僵尸，先走下线流程（订阅转入离线缓冲），避免重复投递。
+        var clientId = string.IsNullOrWhiteSpace(command.ClientId) ? null : command.ClientId.Trim();
+        if (clientId is not null)
+        {
+            foreach (var pair in _authorizedClients.ToArray())
+            {
+                if (!string.Equals(pair.Value, clientId, StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                _options.Report($"客户端 {clientId} 重连，移除旧连接。");
+                RemoveClient(session, pair.Key);
+            }
+        }
+
+        _authorizedClients[client] = clientId;
         SendCommand(session, client, new ResponseCommon
         {
             TaskId = command.TaskId,
@@ -347,6 +380,8 @@ public class EventServer : IEventServer, IDisposable
             TaskId = command.TaskId,
             Status = (byte)ResponseCommonStatus.Success
         });
+
+        FlushOfflineBuffer(session, client, command.Subject);
     }
 
     private void HandleRequest(ServerSession session, System.Net.Sockets.Socket client, RequestUnsubscribe command)
@@ -426,6 +461,69 @@ public class EventServer : IEventServer, IDisposable
         {
             SendCommand(session, client, updateEvent);
         }
+
+        DeliverToOfflineSubscribers(@event.Subject, updateEvent);
+    }
+
+    private void DeliverToOfflineSubscribers(string subject, UpdateEvent updateEvent)
+    {
+        if (!_options.EnableOfflineMessage)
+        {
+            return;
+        }
+
+        foreach (var state in _offlineSubscriptions.Values.ToArray())
+        {
+            Channel<UpdateEvent>? buffer;
+            lock (state.Sync)
+            {
+                if (!state.PendingEvents.TryGetValue(subject, out buffer))
+                {
+                    continue;
+                }
+            }
+
+            // 缓冲有界（DropOldest），写入失败仅代表状态已被并发清理。
+            buffer.Writer.TryWrite(updateEvent);
+        }
+    }
+
+    private void FlushOfflineBuffer(ServerSession session, System.Net.Sockets.Socket client, string subject)
+    {
+        if (!_options.EnableOfflineMessage)
+        {
+            return;
+        }
+
+        var clientId = _authorizedClients.TryGetValue(client, out var id) ? id : null;
+        if (string.IsNullOrEmpty(clientId) ||
+            !_offlineSubscriptions.TryGetValue(clientId, out var state))
+        {
+            return;
+        }
+
+        Channel<UpdateEvent>? buffer;
+        lock (state.Sync)
+        {
+            if (!state.PendingEvents.Remove(subject, out buffer))
+            {
+                return;
+            }
+        }
+
+        buffer.Writer.TryComplete();
+        while (buffer.Reader.TryRead(out var pendingEvent))
+        {
+            SendCommand(session, client, pendingEvent);
+        }
+
+        lock (state.Sync)
+        {
+            if (state.PendingEvents.Count == 0)
+            {
+                _offlineSubscriptions.TryRemove(clientId, out _);
+            }
+        }
     }
 
     private bool PublishQueryToSubscribers(ServerSession session, RequestQuery query)
@@ -482,7 +580,9 @@ public class EventServer : IEventServer, IDisposable
 
     private void RemoveClient(ServerSession session, System.Net.Sockets.Socket tcpClient)
     {
-        _authorizedClients.TryRemove(tcpClient, out _);
+        _authorizedClients.TryRemove(tcpClient, out var clientId);
+        _lastClientActivity.TryRemove(tcpClient, out _);
+        List<string> subscribedSubjects;
         ClientOutboundQueue? queue = null;
         lock (session.OutboundSync)
         {
@@ -495,6 +595,10 @@ public class EventServer : IEventServer, IDisposable
         queue?.Commands.Writer.TryComplete();
         lock (_subscriptionSync)
         {
+            subscribedSubjects = _subscribedSubjectAndClients
+                .Where(pair => pair.Value.Contains(tcpClient))
+                .Select(pair => pair.Key)
+                .ToList();
             foreach (var subject in _subscribedSubjectAndClients.Keys.ToArray())
             {
                 var sockets = _subscribedSubjectAndClients[subject];
@@ -509,6 +613,36 @@ public class EventServer : IEventServer, IDisposable
         foreach (var pendingQuery in _pendingQueries.Where(x => x.Value.Client == tcpClient).ToArray())
         {
             _pendingQueries.TryRemove(pendingQuery.Key, out _);
+        }
+
+        // 断线的订阅转入离线缓冲，断线期间的广播暂存，重连订阅成功后补发。
+        if (clientId is null ||
+            !_options.EnableOfflineMessage ||
+            subscribedSubjects.Count == 0)
+        {
+            return;
+        }
+
+        var state = _offlineSubscriptions.GetOrAdd(clientId, _ => new OfflineSubscriptionState());
+        lock (state.Sync)
+        {
+            foreach (var subject in subscribedSubjects)
+            {
+                if (state.PendingEvents.ContainsKey(subject))
+                {
+                    continue;
+                }
+
+                state.PendingEvents[subject] = Channel.CreateBounded<UpdateEvent>(
+                    new BoundedChannelOptions(_options.OfflineMessageCapacity)
+                    {
+                        SingleReader = true,
+                        SingleWriter = false,
+                        FullMode = BoundedChannelFullMode.DropOldest
+                    });
+            }
+
+            state.LastActiveAt = DateTimeOffset.UtcNow;
         }
     }
 
@@ -609,14 +743,78 @@ public class EventServer : IEventServer, IDisposable
         }
     }
 
+    /// <summary>
+    /// 主动下线空闲超过 ClientIdleTimeout 的连接：客户端主动断开不会触发服务端发送失败，
+    /// 若只依赖心跳回包失败兜底，死连接与其订阅会一直滞留。
+    /// </summary>
+    private void CleanupIdleClients(ServerSession session)
+    {
+        var now = DateTimeOffset.UtcNow;
+        foreach (var pair in _lastClientActivity.ToArray())
+        {
+            if (now - pair.Value <= _options.ClientIdleTimeout)
+            {
+                continue;
+            }
+
+            _options.Report("客户端空闲超时，服务端主动下线。");
+            RemoveClient(session, pair.Key);
+        }
+    }
+
+    private void CleanupExpiredOfflineSubscriptions()
+    {
+        if (!_options.EnableOfflineMessage)
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow;
+        foreach (var pair in _offlineSubscriptions.ToArray())
+        {
+            if (now - pair.Value.LastActiveAt <= _options.OfflineMessageRetention)
+            {
+                continue;
+            }
+
+            if (!_offlineSubscriptions.TryRemove(pair.Key, out var stale))
+            {
+                continue;
+            }
+
+            lock (stale.Sync)
+            {
+                foreach (var buffer in stale.PendingEvents.Values)
+                {
+                    buffer.Writer.TryComplete();
+                }
+
+                stale.PendingEvents.Clear();
+            }
+        }
+    }
+
     private void RemoveClientState()
     {
         _authorizedClients.Clear();
+        _lastClientActivity.Clear();
         lock (_subscriptionSync)
         {
             _subscribedSubjectAndClients.Clear();
         }
 
+        foreach (var state in _offlineSubscriptions.Values)
+        {
+            lock (state.Sync)
+            {
+                foreach (var buffer in state.PendingEvents.Values)
+                {
+                    buffer.Writer.TryComplete();
+                }
+            }
+        }
+
+        _offlineSubscriptions.Clear();
         _pendingQueries.Clear();
     }
 

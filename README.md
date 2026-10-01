@@ -120,6 +120,15 @@ using var eventClient = new EventClient(options);
 - Queue and message limits are enforced to prevent unbounded memory growth. A full per-client outbound queue disconnects that client.
 - Use `ConnectAsync` and the cancellation-aware `QueryAsync` overloads in hosted applications.
 
+## 断线重连与离线消息补发
+
+针对 issue #1（断线重连/消息是否确认）的行为说明：
+
+- **端口是否重连？** 客户端在 TCP 异常、心跳失败或发送失败后会按 `ReconnectInterval` 自动重连，重连成功后自动重新订阅全部本地订阅（`Disconnect()` 主动断开不会触发重连，重新调用 `ConnectAsync` 即可）。
+- **断开的同时有消息发过来怎么办？** 服务端在客户端下线时会把它的订阅转入离线缓冲：断线期间其它端发布到这些主题的广播按序进入有界队列（每客户端每主题上限 `OfflineMessageCapacity`，超出丢弃最旧），保留 `OfflineMessageRetention` 后清理。
+- **重连后是否还会继续执行之前的消息？** 会。重连握手携带实例级 `ClientId`，服务端据此识别同一客户端并清理僵尸旧连接；重新订阅成功后立即按原顺序补发缓冲中的离线消息，之后的新消息正常实时投递。
+- 语义是"断线窗口内至少一次"：在线期间的实时投递仍为尽力而为（无逐条 ACK），服务端重启后内存缓冲即失效。通过 `EnableOfflineMessage = false` 可整体关闭该能力；服务端还会按 `ClientIdleTimeout` 主动下线静默连接（含心跳失效的死连接），需大于客户端心跳间隔。
+
 ## 脚本
 
 - `pack.bat`：还原、构建并打包 `CodeWF.EventBus.Socket` 到 `artifacts\packages`。如果本机存在 `..\CodeWF.NetWeaver\artifacts\packages`，脚本会自动作为本地包源使用，方便在兄弟仓库尚未发布新包时完成本地打包验证。
